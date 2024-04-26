@@ -134,6 +134,7 @@ class CustomMonoDataset(BaseDataset):
             for key in res:
                 if key not in batch_results:
                     img_meta[key] = res[key]
+            img_meta["timestamp"] = res["timestamp"]
             batch_results["img_metas"].append(img_meta)
         
         return batch_results

@@ -1,5 +1,3 @@
-import sys
-sys.path.append('/mnt/pool/cxy/mono3d/')
 from datasets import *
 
 datasets = {

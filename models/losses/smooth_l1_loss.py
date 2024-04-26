@@ -26,7 +26,7 @@ def smooth_l1_loss(pred, target, beta=1.0):
         return pred.sum() * 0
 
     assert pred.size() == target.size()
-    import pdb; pdb.set_trace()
+
     diff = torch.abs(pred - target)
     loss = torch.where(diff < beta, 0.5 * diff * diff / beta,
                        diff - 0.5 * beta)

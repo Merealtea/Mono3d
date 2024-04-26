@@ -340,7 +340,7 @@ class Resize():
                     backend=self.backend)
             results[key] = img
 
-            scale_factor = np.array([w_scale, h_scale, w_scale, h_scale],
+            scale_factor = np.array([w_scale, h_scale],
                                     dtype=np.float32)
             results['img_shape'] = img.shape
             # in case that there is no padding

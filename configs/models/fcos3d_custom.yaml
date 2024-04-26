@@ -30,9 +30,9 @@ bbox_head :
     in_channels : 256
     stacked_convs : 2
     feat_channels : 256
-    use_direction_classifier : true
+    use_direction_classifier : false
     diff_rad_by_sin : true
-    pred_attrs : true
+    pred_attrs : false
     pred_velo : true
     dir_offset : 0.7854
     dir_limit_offset : 0
@@ -42,7 +42,12 @@ bbox_head :
     reg_branch : [[256], [256], [256], [256], []]
     dir_branch : [256]
     attr_branch : [256]
-
+    loss_cls : 
+        type : 'FocalLoss'
+        use_sigmoid : True
+        gamma : 2.0
+        alpha : 0.25
+        loss_weight : 0.0
     loss_bbox :
         type : SmoothL1Loss
         beta : 0.1111111111111111
@@ -51,6 +56,10 @@ bbox_head :
         type : CrossEntropyLoss
         use_sigmoid : false
         loss_weight : 1.0
+    loss_attr :
+        type : 'CrossEntropyLoss'
+        use_sigmoid : False
+        loss_weight : 0
     loss_centerness :
         type : CrossEntropyLoss
         use_sigmoid : true
@@ -63,3 +72,18 @@ bbox_head :
     center_sampling : true
     conv_bias : true
     dcn_on_last_conv : true
+
+train_cfg :
+    allowed_border : 0
+    code_weight : [1.0, 1.0, 0.2, 1.0, 1.0, 1.0, 1.0, 0.05, 0.05]
+    pos_weight : -1
+    debug: False
+
+test_cfg :
+    use_rotate_nms : True
+    nms_across_levels : False
+    nms_pre : 1000
+    nms_thr : 0.8
+    score_thr : 0.05
+    min_bbox_size : 0
+    max_per_img : 200

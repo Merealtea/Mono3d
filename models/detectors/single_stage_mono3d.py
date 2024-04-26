@@ -141,24 +141,6 @@ class SingleStageMono3DDetector(SingleStageDetector):
 
         # only support aug_test for one sample
         outs_list = [self.bbox_head(x) for x in feats]
-        for i, img_meta in enumerate(img_metas):
-            if img_meta[0]['pcd_horizontal_flip']:
-                for j in range(len(outs_list[i])):  # for each prediction
-                    if outs_list[i][j][0] is None:
-                        continue
-                    for k in range(len(outs_list[i][j])):
-                        # every stride of featmap
-                        outs_list[i][j][k] = torch.flip(
-                            outs_list[i][j][k], dims=[3])
-                reg = outs_list[i][1]
-                for reg_feat in reg:
-                    # offset_x
-                    reg_feat[:, 0, :, :] = 1 - reg_feat[:, 0, :, :]
-                    # velo_x
-                    if self.bbox_head.pred_velo:
-                        reg_feat[:, 7, :, :] = -reg_feat[:, 7, :, :]
-                    # rotation
-                    reg_feat[:, 6, :, :] = -reg_feat[:, 6, :, :] + np.pi
 
         merged_outs = []
         for i in range(len(outs_list[0])):  # for each prediction
@@ -184,14 +166,7 @@ class SingleStageMono3DDetector(SingleStageDetector):
         merged_outs = tuple(merged_outs)
 
         bbox_outputs = self.bbox_head.get_bboxes(
-            *merged_outs, img_metas[0], rescale=rescale)
-        if self.bbox_head.pred_bbox2d:
-            from mmdet.core import bbox2result
-            bbox2d_img = [
-                bbox2result(bboxes2d, labels, self.bbox_head.num_classes)
-                for bboxes, scores, labels, attrs, bboxes2d in bbox_outputs
-            ]
-            bbox_outputs = [bbox_outputs[0][:-1]]
+            *merged_outs, img_metas, rescale=rescale)
 
         bbox_img = [
             bbox3d2result(bboxes, scores, labels, attrs)
@@ -200,8 +175,6 @@ class SingleStageMono3DDetector(SingleStageDetector):
 
         bbox_list = dict()
         bbox_list.update(img_bbox=bbox_img[0])
-        if self.bbox_head.pred_bbox2d:
-            bbox_list.update(img_bbox2d=bbox2d_img[0])
 
         return [bbox_list]
 

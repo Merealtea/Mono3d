@@ -44,7 +44,6 @@ class LoadImageFromFile:
 
         filename = results['img_info']['filename']
 
-
         img = cv2.imread(filename, cv2.IMREAD_COLOR)
         if self.color_type == "rgb":
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -56,7 +55,7 @@ class LoadImageFromFile:
         results['img'] = img
         results['img_shape'] = img.shape
         results['ori_shape'] = img.shape
-        results['timestamp'] = filename.split('/')[-1].split('.')[0]
+        results['timestamp'] = filename.split('/')[-1].split('.jpg')[0]
         return results
 
     def __repr__(self):
@@ -88,6 +87,7 @@ class LoadImageFromFileMono3D(LoadImageFromFile):
         """
         super().__call__(results)
         # results['world2cam'] = results['img_info']['cam_extrinsic']
+        results["direction"] = results['img_info']['filename'].split('/')[-2]
         return results
 
 @PIPELINES.register_module()
@@ -156,11 +156,11 @@ class LoadAnnotations3D():
         with open(anntation_file, 'rb') as f:
             annotations = pickle.load(f)
 
-        # x,y, z, l, w, h, yaw 
+        # x,y, z, l, w, h, yaw, velx, vely
         if len(annotations):
-            results['gt_bboxes_3d'] = np.array(annotations)[:, :7]
+            results['gt_bboxes_3d'] = np.concatenate([np.array(annotations)[:, :7], np.zeros((len(annotations), 2))], axis = 1)
         else:
-            results['gt_bboxes_3d'] = np.zeros((0, 7))
+            results['gt_bboxes_3d'] = np.zeros((0, 9))
         return results
 
     def _load_bboxes_depth(self, results):
@@ -180,10 +180,12 @@ class LoadAnnotations3D():
         # x,y, z, l, w, h, yaw, center2dx, center2dy, depth
         if len(annotations):
             results['centers2d'] = annotations[:, 7:9]
-            results['depths'] = annotations[:, 9:10]
+            results['depths'] = annotations[:, 9]
         else:
             results['centers2d'] = np.zeros((0, 2))
-            results['depths'] = np.zeros((0,1))
+            results['depths'] = np.zeros((0,))
+
+        results['bbox_fields'] = ["centers2d"]
         return results
 
     def _load_labels_3d(self, results):
@@ -201,14 +203,15 @@ class LoadAnnotations3D():
             annotations = np.array(pickle.load(f))
         
         if len(annotations):
-            if annotations.shape[1] <= 7:
+            if annotations.shape[1] <= 10:
                 # Which means there is no label
-                results['gt_labels_3d'] = np.zeros((annotations.shape[0], 1))
+                results['gt_labels_3d'] = np.zeros((annotations.shape[0],))
             else:
-                results['gt_labels_3d'] = annotations[:, 7:8]
+                results['gt_labels_3d'] = annotations[:, 10]
         else:
-            results['gt_labels_3d'] = np.zeros((0, 1))
-            
+            results['gt_labels_3d'] = np.zeros((0, ))
+        
+        results['attr_labels'] = np.zeros_like(results['gt_labels_3d'])
         return results
 
     def __call__(self, results):
