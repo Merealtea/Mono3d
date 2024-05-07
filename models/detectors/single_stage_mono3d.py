@@ -41,7 +41,6 @@ class SingleStageMono3DDetector(SingleStageDetector):
         bbox_head.update(train_cfg=train_cfg)
         bbox_head.update(test_cfg=test_cfg)
         self.bbox_head = build_head(bbox_head)
-        import pdb
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
 

@@ -136,6 +136,7 @@ def binary_cross_entropy(pred,
 
     # weighted element-wise losses
     weight = weight.float()
+
     loss = F.binary_cross_entropy_with_logits(
         pred, label.float(), pos_weight=class_weight, reduction='none')
     # do the reduction for the weighted loss
@@ -241,7 +242,7 @@ class CrossEntropyLoss(nn.Module):
                 'ignore the certain label and average loss over non-ignore '
                 'labels, which is the same with PyTorch official '
                 'cross_entropy, set ``avg_non_ignore=True``.')
-
+        
         if self.use_sigmoid:
             self.cls_criterion = binary_cross_entropy
         elif self.use_mask:
@@ -288,6 +289,7 @@ class CrossEntropyLoss(nn.Module):
                 self.class_weight, device=cls_score.device)
         else:
             class_weight = None
+
         loss_cls = self.loss_weight * self.cls_criterion(
             cls_score,
             label,

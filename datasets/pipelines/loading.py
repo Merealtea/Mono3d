@@ -157,10 +157,15 @@ class LoadAnnotations3D():
             annotations = pickle.load(f)
 
         # x,y, z, l, w, h, yaw, velx, vely
-        if len(annotations):
-            results['gt_bboxes_3d'] = np.concatenate([np.array(annotations)[:, :7], np.zeros((len(annotations), 2))], axis = 1)
-        else:
-            results['gt_bboxes_3d'] = np.zeros((0, 9))
+        results["gt_bboxes_3d"] = []
+        results["gt_bboxes"] = []
+        for ann in annotations:
+            results["gt_bboxes_3d"].append(ann['bbox3d'])
+            results["gt_bboxes"].append(ann['bbox'])
+
+        results['gt_bboxes_3d'] = np.array(results['gt_bboxes_3d']).reshape(-1, 9)
+        results['gt_bboxes'] = np.array(results['gt_bboxes']).reshape(-1, 4)
+        results['bbox_fields'].append("gt_bboxes")
         return results
 
     def _load_bboxes_depth(self, results):
@@ -175,17 +180,17 @@ class LoadAnnotations3D():
         ann_info = results['ann_info']
         anntation_file = ann_info['filename']
         with open(anntation_file, 'rb') as f:
-            annotations = np.array(pickle.load(f))
+            annotations = pickle.load(f)
 
-        # x,y, z, l, w, h, yaw, center2dx, center2dy, depth
-        if len(annotations):
-            results['centers2d'] = annotations[:, 7:9]
-            results['depths'] = annotations[:, 9]
-        else:
-            results['centers2d'] = np.zeros((0, 2))
-            results['depths'] = np.zeros((0,))
+        results['centers2d'] = []
+        results['depths'] = []
 
-        results['bbox_fields'] = ["centers2d"]
+        for ann in annotations:
+            results['centers2d'].append(ann['center2d'])
+            results['depths'].append(ann['depth'])
+        results['centers2d'] = np.array(results['centers2d']).reshape(-1, 2)
+        results['depths'] = np.array(results['depths']).reshape(-1)
+        results['bbox_fields'].append("centers2d")
         return results
 
     def _load_labels_3d(self, results):
@@ -200,18 +205,17 @@ class LoadAnnotations3D():
         ann_info = results['ann_info']
         anntation_file = ann_info['filename']
         with open(anntation_file, 'rb') as f:
-            annotations = np.array(pickle.load(f))
-        
-        if len(annotations):
-            if annotations.shape[1] <= 10:
-                # Which means there is no label
-                results['gt_labels_3d'] = np.zeros((annotations.shape[0],))
+            annotations = pickle.load(f)
+
+        results['gt_labels_3d'] = []
+        for ann in annotations:
+            if 'label_3d' in ann:
+                results['gt_labels_3d'].append(ann['label_3d'])
             else:
-                results['gt_labels_3d'] = annotations[:, 10]
-        else:
-            results['gt_labels_3d'] = np.zeros((0, ))
-        
+                results['gt_labels_3d'].append(0)
+        results['gt_labels_3d'] = np.array(results['gt_labels_3d']).reshape(-1)
         results['attr_labels'] = np.zeros_like(results['gt_labels_3d'])
+        results['gt_labels'] = np.zeros_like(results['gt_labels_3d'])
         return results
 
     def __call__(self, results):

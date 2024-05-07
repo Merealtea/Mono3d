@@ -74,5 +74,5 @@ class BaseMono3DDenseHead(BaseModule, metaclass=ABCMeta):
         if proposal_cfg is None:
             return losses
         else:
-            proposal_list = self.get_bboxes(*outs, img_metas, cfg=proposal_cfg)
+            proposal_list = self.get_bboxes(*outs, img_metas, cfg=proposal_cfg, rescale = True)
             return losses, proposal_list

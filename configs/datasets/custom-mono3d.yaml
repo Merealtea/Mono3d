@@ -36,8 +36,8 @@ train_pipeline :
         << : *img_norm_cfg
 
 test_pipeline :
-    -   
-        type : LoadImageFromFileMono3D 
+    -
+        type : LoadImageFromFileMono3D
     -
         type : LoadAnnotations3D 
         with_bbox : false
@@ -46,15 +46,17 @@ test_pipeline :
         with_bbox_3d : True
         with_label_3d : True
         with_bbox_depth : True
-    - 
+    -
         type :  Resize 
         img_scale : *img_scale
         keep_ratio : True
         multiscale_mode : value
-    -    
+
+    # RandomFlip3D :
+    #     flip_ratio_bev_horizontal : 0.5
+    -
         type : Pad 
         size_divisor : 16
     -
         type : Normalize  
         << : *img_norm_cfg
-

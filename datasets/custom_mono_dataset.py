@@ -90,14 +90,14 @@ class CustomMonoDataset(BaseDataset):
             self.info_path = os.path.join(data_root, f'data_val_info.txt')
         
         self.load_infos(self.info_path)
-
+        self.test_mode = False
         # processing pipeline
         self.pipeline = Compose(pipeline)
 
     def get_single_item(self, idx):
         img_info, ann_info = self.data_infos[idx]
 
-        results = dict(img_info=img_info, ann_info=ann_info)
+        results = dict(img_info=img_info, ann_info=ann_info, bbox_fields = [])
         return self.pipeline(results)
 
     def collate(self, results):
@@ -109,6 +109,8 @@ class CustomMonoDataset(BaseDataset):
         centers2d = []
         depths = []
         timestamps = []
+        gt_bboxes = []
+        gt_labels = []
 
         for result in results:
             imgs.append(result['img'].transpose(2, 0, 1))
@@ -117,10 +119,12 @@ class CustomMonoDataset(BaseDataset):
             centers2d.append(torch.FloatTensor(result['centers2d']))
             depths.append(torch.FloatTensor(result['depths']))
             timestamps.append(result['timestamp'])
+            gt_bboxes.append(torch.FloatTensor(result['gt_bboxes']))
+            gt_labels.append(torch.LongTensor(result['gt_labels']))
 
         batch_results['img'] = torch.FloatTensor(np.stack(imgs))
-        batch_results['gt_bboxes'] = [torch.zeros((0,4))] * len(timestamps) 
-        batch_results['gt_labels'] = [torch.zeros((0)).long()] * len(timestamps) 
+        batch_results['gt_bboxes'] = gt_bboxes
+        batch_results['gt_labels'] = gt_labels 
         batch_results['gt_bboxes_3d'] = gt_bboxes_3d
         batch_results['gt_labels_3d'] = gt_labels_3d
         batch_results['centers2d'] = centers2d
@@ -135,8 +139,10 @@ class CustomMonoDataset(BaseDataset):
                 if key not in batch_results:
                     img_meta[key] = res[key]
             img_meta["timestamp"] = res["timestamp"]
+            img_meta['gt_bboxes3d'] = res['gt_bboxes_3d']
             batch_results["img_metas"].append(img_meta)
-        
+        if self.test_mode:
+            print("gt bboxes: ", batch_results['gt_bboxes'])
         return batch_results
 
 

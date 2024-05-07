@@ -351,7 +351,8 @@ class Resize():
     def _resize_bboxes(self, results):
         """Resize bounding boxes with ``results['scale_factor']``."""
         for key in results.get('bbox_fields', []):
-            bboxes = results[key] * results['scale_factor']
+            original_shape = results[key].shape
+            bboxes = (results[key].reshape(-1, 2) * results['scale_factor']).reshape(original_shape)
             if self.bbox_clip_border:
                 img_shape = results['img_shape']
                 bboxes[:, 0::2] = np.clip(bboxes[:, 0::2], 0, img_shape[1])
