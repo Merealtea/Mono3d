@@ -1,0 +1,107 @@
+dataset_type : &dataset_type 'CustomMV3DDataset'
+class_names : &class_names ['Pedestrian']
+multiview_indices : ['left', 'right', 'front', 'back']
+input_modality : &input_modality
+  use_lidar : False 
+  use_camera : True
+img_norm_cfg : &img_norm_cfg
+    mean : [123.675, 116.28, 103.53] 
+    std : [58.395, 57.12, 57.375] 
+    to_rgb : True
+img_scale : &img_scale [540, 960]
+
+
+# Explore RandomFlip3D Aug
+train_pipeline : &train_pipeline
+    -
+      type : 'LoadMultiViewImageFromFiles'
+      to_float32 : True
+    -
+      type : 'MultiViewImagePhotoMetricDistortion'
+    -
+      type : 'MultiViewImageResize3D'
+      img_scale : *img_scale
+      # ratio_range : [0.95, 1.05]
+      keep_ratio : True
+      multiscale_mode : 'value'
+    -
+    #   type : 'MultiViewImageCrop3D' 
+    #   crop_size : [720, 1080]
+    # -
+    #   type : 'MultiViewRandomFlip3D' 
+    #   flip_ratio : 0.5 
+    #   direction : 'horizontal'
+    # -
+      type : 'LoadAnnotations3D'
+      with_bbox_3d : True
+      with_label_3d : True
+      with_attr_label : False
+    -
+      type : 'MultiViewImageNormalize'
+      << : *img_norm_cfg
+    - 
+      type : 'MultiViewImagePad'
+      size_divisor : 16
+
+test_pipeline : &test_pipeline
+      -
+        type : 'LoadMultiViewImageFromFiles'
+        to_float32 : True
+      -
+        type : 'MultiViewImageResize3D'
+        img_scale : *img_scale
+        keep_ratio : True
+        multiscale_mode : 'range'
+      -
+        type : 'MultiViewImageNormalize'
+        << : *img_norm_cfg
+      -
+        type : 'MultiViewImagePad'
+        size_divisor : 16
+
+data : 
+  samples_per_gpu : 2
+  workers_per_gpu : 2
+  # train : 
+  #     type : *dataset_type
+  #     data_root : *data_root
+  #     ann_file : *data_root + 'waymo_infos_train.pkl'
+  #     split : 'training'
+  #     classes : *class_names
+  #     pipeline : *train_pipeline
+  #     modality : *input_modality
+  #     test_mode : False
+  #     box_type_3d : 'LiDAR'
+  #     load_interval : 5
+  #     load_mode : 'lidar_frame'
+  #     max_sweeps : 10
+  #     cam_sync : True
+  #     file_client_args : *file_client_args
+  # val : 
+  #     type : *dataset_type
+  #     data_root : *data_root
+  #     ann_file : *data_root + 'waymo_infos_val.pkl'
+  #     split : 'training'
+  #     classes : *class_names
+  #     pipeline : *test_pipeline
+  #     modality : *input_modality
+  #     test_mode : True
+  #     box_type_3d : 'LiDAR'
+  #     load_mode : 'lidar_frame'
+  #     max_sweeps : 10
+  #     cam_sync : True
+  #     file_client_args : *file_client_args
+  # test : 
+  #     type : *dataset_type
+  #     data_root : *data_root
+  #     ann_file : *data_root + 'waymo_infos_val.pkl'
+  #     split : 'training'
+  #     classes : *class_names
+  #     pipeline : *test_pipeline
+  #     modality : input_modality
+  #     test_mode : True
+  #     box_type_3d : 'LiDAR'
+  #     load_mode : 'lidar_frame'
+  #     max_sweeps : 10
+  #     cam_sync : True
+  #     file_client_args : *file_client_args

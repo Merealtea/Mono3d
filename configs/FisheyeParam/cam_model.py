@@ -158,8 +158,8 @@ class CamModel:
         points3D = np.dot(self.r1, np.vstack((x, y, z)))
 
         # 只考虑向下的点
-        valid = points3D[2] < 0
-        points3D = points3D[:, valid]
+        # valid = points3D[2] < 0
+        # points3D = points3D[:, valid]
         norm = np.linalg.norm(points3D[:2], axis=0)
         theta = np.arctan2(points3D[2], norm)
         invnorm = 1.0 / norm
@@ -172,8 +172,9 @@ class CamModel:
         v, u = np.around(np.dot(self.stretch_mat, np.vstack((x, y))) + self.img_center).astype(int)
 
         # 使用矩阵索引安全检查边界条件
-        valid_idx = (u >= 0) & (u < self.width) & (v >= 0) & (v < self.height)
-        return np.array([u[valid_idx], v[valid_idx]]) 
+        u[u < 0], u[u > self.width] = 0, self.width
+        v[v < 0], v[v > self.height] = 0, self.height
+        return np.array([u, v]) 
 
     def _cam2image_torch(self, points3D):
         """ Projects 3D points on the image and returns the pixel coordinates. """
@@ -186,8 +187,8 @@ class CamModel:
         points3D = torch.matmul(self.r1, torch.stack((x, y, z)))
 
         # 只考虑向下的点
-        valid = points3D[2] < 0
-        points3D = points3D[:, valid]
+        # valid = points3D[2] < 0
+        # points3D = points3D[:, valid]
 
         norm = torch.norm(points3D[:2], dim=0)
         theta = torch.atan2(points3D[2], norm)
@@ -200,9 +201,10 @@ class CamModel:
         v, u = torch.round(torch.matmul(self.stretch_mat, torch.stack((x, y))) + self.img_center).int()
 
         # 使用矩阵索引安全检查边界条件
-        valid_idx = (u >= 0) & (u < self.width) & (v >= 0) & (v < self.height)
-        return torch.stack([u[valid_idx], v[valid_idx]])
-
+        u[u < 0], u[u > self.width] = 0, self.width
+        v[v < 0], v[v > self.height] = 0, self.height
+        return torch.stack([u, v])
+    
     def cam2world(self, points3D):
         """ Projects 3D points on the image and returns the cam coordinates. """
         assert points3D.shape[0] == 3, "points3D must be a 3xN matrix. "

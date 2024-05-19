@@ -1,0 +1,32 @@
+model_config : /data/cxy/Mono3d/configs/models/pgd.yaml
+dataset_config : /data/cxy/Mono3d/configs/datasets/custom-mono3d.yaml
+data_root : /data/cxy/Mono3d/data/2024-04-27-19-07-09
+save_path : ./ckpt/
+annotation_prefix : annotations
+image_prefix : images
+gpu_id : 0
+seed : 2025
+
+optimizer : 
+    lr : 0.002
+    paramwise_cfg : 
+        bias_lr_mult : 2.0
+        bias_decay_mult : 0.0
+    grad_clip : 
+        max_norm : 35.0
+        norm_type : 2
+
+epoches : 50
+
+batch_size : 16
+
+eval_interval : 5
+save_interval : 5
+
+lr_config : 
+    policy : step
+    warmup : linear
+    warmup_iters : 500
+    warmup_ratio : 0.3333333333333333
+    step : [8, 11]
+

@@ -14,8 +14,8 @@ train_pipeline :
         type : LoadImageFromFileMono3D
     -
         type : LoadAnnotations3D 
-        with_bbox : false
-        with_label : false
+        with_bbox : True
+        with_label : True
         with_attr_label : false
         with_bbox_3d : True
         with_label_3d : True
@@ -40,8 +40,8 @@ test_pipeline :
         type : LoadImageFromFileMono3D
     -
         type : LoadAnnotations3D 
-        with_bbox : false
-        with_label : false
+        with_bbox : True
+        with_label : True
         with_attr_label : false
         with_bbox_3d : True
         with_label_3d : True

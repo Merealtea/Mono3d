@@ -76,7 +76,8 @@ class CustomMonoDataset(BaseDataset):
                  proposal_file=None,
                  test_mode=False,
                  filter_empty_gt=True,
-                 file_client_args=dict(backend='disk')):
+                 file_client_args=dict(backend='disk'),
+                 **kwargs):
         super(CustomMonoDataset, self).__init__(data_root, img_prefix, ann_prefix, test_mode, classes)
         self.proposal_file = proposal_file
         self.filter_empty_gt = filter_empty_gt

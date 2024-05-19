@@ -6,7 +6,7 @@ from mmcv.cnn import ConvModule, bias_init_with_prob, normal_init
 from mmcv.runner import force_fp32
 from torch import nn as nn
 
-from mmdet.core import multi_apply
+from core import multi_apply
 from ..builder import HEADS, build_loss
 from .base_mono3d_dense_head import BaseMono3DDenseHead
 

@@ -90,6 +90,74 @@ class LoadImageFromFileMono3D(LoadImageFromFile):
         results["direction"] = results['img_info']['filename'].split('/')[-2]
         return results
 
+
+@PIPELINES.register_module()
+class LoadMultiViewImageFromFiles(object):
+    """Load multi channel images from a list of separate channel files.
+
+    Expects results['img_filename'] to be a list of filenames.
+
+    Args:
+        to_float32 (bool, optional): Whether to convert the img to float32.
+            Defaults to False.
+        color_type (str, optional): Color type of the file.
+            Defaults to 'unchanged'.
+    """
+
+    def __init__(self, to_float32=False, color_type='unchanged'):
+        self.to_float32 = to_float32
+        self.color_type = color_type
+
+    def __call__(self, results):
+        """Call function to load multi-view image from files.
+
+        Args:
+            results (dict): Result dict containing multi-view image filenames.
+
+        Returns:
+            dict: The result dict containing the multi-view image data.
+                Added keys and values are described below.
+
+                - filename (str): Multi-view image filenames.
+                - img (np.ndarray): Multi-view image arrays.
+                - img_shape (tuple[int]): Shape of multi-view image arrays.
+                - ori_shape (tuple[int]): Shape of original image arrays.
+                - pad_shape (tuple[int]): Shape of padded image arrays.
+                - scale_factor (float): Scale factor.
+                - img_norm_cfg (dict): Normalization configuration of images.
+        """
+        filename = results['img_filename']
+        # img is of shape (h, w, c, num_views)
+        img = [cv2.imread(name) for name in filename]
+        if self.color_type == 'rgb':
+            img = [cv2.cvtColor(img_i, cv2.COLOR_BGR2RGB) for img_i in img]
+        img = np.stack(img, axis=-1)
+        
+        if self.to_float32:
+            img = img.astype(np.float32)
+        results['filename'] = filename
+        # unravel to list, see `DefaultFormatBundle` in formatting.py
+        # which will transpose each image separately and then stack into array
+        results['img'] = [img[..., i] for i in range(img.shape[-1])]
+        results['img_shape'] = img.shape
+        results['ori_shape'] = img.shape
+        # Set initial values for default meta_keys
+        results['pad_shape'] = img.shape
+        results['scale_factor'] = 1.0
+        num_channels = 1 if len(img.shape) < 3 else img.shape[2]
+        results['img_norm_cfg'] = dict(
+            mean=np.zeros(num_channels, dtype=np.float32),
+            std=np.ones(num_channels, dtype=np.float32),
+            to_rgb=False)
+        return results
+
+    def __repr__(self):
+        """str: Return a string that describes the module."""
+        repr_str = self.__class__.__name__
+        repr_str += f'(to_float32={self.to_float32}, '
+        repr_str += f"color_type='{self.color_type}')"
+        return repr_str
+
 @PIPELINES.register_module()
 class LoadAnnotations3D():
     """Load Annotations3D.
@@ -141,6 +209,26 @@ class LoadAnnotations3D():
         self.with_label_3d = with_label_3d
         self.with_attr_label = with_attr_label
 
+    def _load_bboxes(self, results):
+        """Private function to load 2D bounding box annotations.
+
+        Args:
+            results (dict): Result dict from :obj:`mmdet3d.CustomDataset`.
+
+        Returns:
+            dict: The dict containing loaded 2D bounding box annotations.
+        """
+        ann_info = results['ann_info']
+        anntation_file = ann_info['filename']
+        with open(anntation_file, 'rb') as f:
+            annotations = pickle.load(f)
+
+        results["gt_bboxes"] = []
+        for ann in annotations:
+            results["gt_bboxes"].append(ann['bbox'])
+        results['gt_bboxes'] = np.array(results['gt_bboxes']).reshape(-1, 4)
+        results['bbox_fields'].append("gt_bboxes")
+        return results
 
     def _load_bboxes_3d(self, results):
         """Private function to load 3D bounding box annotations.
@@ -158,14 +246,10 @@ class LoadAnnotations3D():
 
         # x,y, z, l, w, h, yaw, velx, vely
         results["gt_bboxes_3d"] = []
-        results["gt_bboxes"] = []
         for ann in annotations:
             results["gt_bboxes_3d"].append(ann['bbox3d'])
-            results["gt_bboxes"].append(ann['bbox'])
 
         results['gt_bboxes_3d'] = np.array(results['gt_bboxes_3d']).reshape(-1, 9)
-        results['gt_bboxes'] = np.array(results['gt_bboxes']).reshape(-1, 4)
-        results['bbox_fields'].append("gt_bboxes")
         return results
 
     def _load_bboxes_depth(self, results):
@@ -192,6 +276,7 @@ class LoadAnnotations3D():
         results['depths'] = np.array(results['depths']).reshape(-1)
         results['bbox_fields'].append("centers2d")
         return results
+
 
     def _load_labels_3d(self, results):
         """Private function to load label annotations.
@@ -232,6 +317,8 @@ class LoadAnnotations3D():
             results = self._load_bboxes_3d(results)
             if results is None:
                 return None
+        if self.with_bbox:
+            results = self._load_bboxes(results)
         if self.with_bbox_depth:
             results = self._load_bboxes_depth(results)
         if self.with_label_3d:

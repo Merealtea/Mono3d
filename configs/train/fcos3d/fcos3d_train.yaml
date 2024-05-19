@@ -1,6 +1,6 @@
 model_config : /data/cxy/Mono3d/configs/models/fcos3d_custom.yaml
 dataset_config : /data/cxy/Mono3d/configs/datasets/custom-mono3d.yaml
-data_root : /data/cxy/Mono3d/data/2024-04-20-15-29-03
+data_root : /data/cxy/Mono3d/data/2024-04-27-19-07-09
 save_path : ./ckpt/
 annotation_prefix : annotations
 image_prefix : images

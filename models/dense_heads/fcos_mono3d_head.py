@@ -7,27 +7,29 @@ from mmcv.cnn import Scale, normal_init
 from mmcv.runner import force_fp32
 from torch import nn as nn
 from configs.FisheyeParam import CamModel
-from mmdet3d.core import (box3d_multiclass_nms, limit_period, points_img2cam,
+from core import (box3d_multiclass_nms, limit_period, points_img2cam,
                           xywhr2xyxyr)
-from mmdet3d.core.bbox import Box3DMode, CameraInstance3DBoxes
-from functools import partial
-from six.moves import map, zip
+from core.bbox import Box3DMode, CameraInstance3DBoxes
+from core import multi_apply
+from six.moves import zip
 import os
-from mmdet.core.bbox.builder import build_bbox_coder
+from core.bbox.builder import build_bbox_coder
 from ..builder import HEADS, build_loss
 from .anchor_free_mono3d_head import AnchorFreeMono3DHead
 
 def draw_boxes(boxes, filename):
     # 创建一个空白的图像
-    img = np.zeros((500, 500, 3), dtype=np.uint8)
+    # 五十个像素为一米， 20 * 20米
+    img = np.zeros((1000, 1000, 3), dtype=np.uint8)
     if isinstance(boxes, torch.Tensor):
         boxes = boxes.cpu().detach().numpy() 
         boxes = np.stack(
             ((boxes[:, 0] + boxes[:, 2]) / 2, (boxes[:, 1] + boxes[:, 3]) / 2,
             boxes[:, 2] - boxes[:, 0], boxes[:, 3] - boxes[:, 1], boxes[:, 4]),
             axis=-1)
-        boxes[:, :4] = 20 * boxes[:, :4] 
-        boxes[:, 0] += 200
+        boxes[:, :4] = 10 * boxes[:, :4] 
+        boxes[:, 0] *= -1
+        boxes[:, 0] += 250
         for box in boxes:
             center_x, center_y, width, height, angle = box
             # 创建一个旋转矩形
@@ -38,65 +40,33 @@ def draw_boxes(boxes, filename):
             img = cv2.polylines(img, [box], True, (0, 255, 0), 2)
     else:
         for i in range(len(boxes)):
+            if len(boxes[i]) == 0:
+                continue
             boxes[i] = boxes[i].cpu().detach().numpy() 
             boxes[i] = np.stack(
                 ((boxes[i][:, 0] + boxes[i][:, 2]) / 2, (boxes[i][:, 1] + boxes[i][:, 3]) / 2,
                 boxes[i][:, 2] - boxes[i][:, 0], boxes[i][:, 3] - boxes[i][:, 1], boxes[i][:, 4]),
                 axis=-1)
-            boxes[i][:, :4] = 20 * boxes[i][:, :4] 
-            boxes[i][:, 0] += 200
-
-        for box in boxes[0]:
-            center_x, center_y, width, height, angle = box
-            # 创建一个旋转矩形
-            rect = ((int(center_x), int(center_y)), (int(width), int(height)), angle)
-            # 计算旋转矩形的四个顶点
-            box = cv2.boxPoints(rect).astype(np.int32)
-            # 在图像上绘制旋转矩形
-            img = cv2.polylines(img, [box], True, (0, 255, 0), 2)
-
-        for box in boxes[1]:
-            center_x, center_y, width, height, angle = box
-            # 创建一个旋转矩形
-            rect = ((int(center_x), int(center_y)), (int(width), int(height)), angle)
-            # 计算旋转矩形的四个顶点
-            box = cv2.boxPoints(rect).astype(np.int32)
-            img = cv2.polylines(img, [box], True, (255, 0, 0), 2)
+        color = (0, 0, 255 )
+        for bbox in boxes:
+            for box in bbox:
+                center_x, center_y, width, height, angle = box
+                center_y *= -1
+                center_y += 10 ;center_x += 10
+                center_x *= 50; center_y *= 50; width *= 50; height *= 50
+                # center_y = 1000 - center_y
+                # 创建一个旋转矩形
+                rect = ((int(center_x), int(center_y)), (int(width), int(height)), angle )
+                # 计算旋转矩形的四个顶点
+                box = cv2.boxPoints(rect).astype(np.int32)
+                # 在图像上绘制旋转矩形
+                img = cv2.polylines(img, [box], True, color, 2)
+            color = ( 0, 255,0)
 
     # 保存图像
     cv2.imwrite(filename, img)
 
 INF = 1e8
-
-def split(concat_tensor, split_size):
-    start_idx = 0
-    split_result = []
-    for size in split_size:
-        end_idx = start_idx + size
-        split_result.append(concat_tensor[start_idx:end_idx])
-        start_idx = end_idx
-    return split_result
-
-def multi_apply(func, *args, **kwargs):
-    """Apply function to a list of arguments.
-
-    Note:
-        This function applies the ``func`` to multiple inputs and
-        map the multiple outputs of the ``func`` into different
-        list. Each list contains the same type of outputs corresponding
-        to different inputs.
-
-    Args:
-        func (Function): A function that will be applied to a list of
-            arguments
-
-    Returns:
-        tuple(list): A tuple containing multiple list, each list contains \
-            a kind of returned results by the function
-    """
-    pfunc = partial(func, **kwargs) if kwargs else func
-    map_results = map(pfunc, *args)
-    return tuple(map(list, zip(*map_results)))
 
 
 @HEADS.register_module()
@@ -454,7 +424,7 @@ class FCOSMono3DHead(AnchorFreeMono3DHead):
 
                         concat_img = np.concatenate([np.concatenate([centerness_map, centerness_map_target], axis = 1),
                                                 np.concatenate([g, cls_pred_map], axis = 1)])
-                        
+
                         if not os.path.exists(f"./grid/{epoch}"):
                             os.makedirs(f"./grid/{epoch}")
                         cv2.imwrite(f"./grid/{epoch}/{timestamp}_{direction}_{strd}.png", concat_img)
@@ -672,6 +642,8 @@ class FCOSMono3DHead(AnchorFreeMono3DHead):
                 centernesses[i][img_id].detach() for i in range(num_levels)
             ]
             input_meta = img_metas[img_id]
+            if not os.path.exists(f"./bev/"):
+                os.makedirs(f"./bev/")
             det_bboxes = self._get_bboxes_single(
                 cls_score_list, bbox_pred_list, dir_cls_pred_list,
                 attr_pred_list, centerness_pred_list, mlvl_points, input_meta,
@@ -785,11 +757,11 @@ class FCOSMono3DHead(AnchorFreeMono3DHead):
         #                                          mlvl_dir_scores,
         #                                          self.dir_offset, cam2img)
 
-        mlvl_bboxes = mlvl_bboxes[:, [1, 2, 0, 4, 5, 3, 6, 7, 8]]
+        mlvl_bboxes = mlvl_bboxes[:, [2, 1, 0, 5, 4, 3, 6, 7, 8]]
 
         mlvl_bboxes_for_nms = xywhr2xyxyr(CameraInstance3DBoxes(
             mlvl_bboxes, box_dim=self.bbox_code_size,
-            origin=(0.5, 0.5, 0.5)).bev)
+            origin=(0.5, 1, 0.5)).bev)
 
         mlvl_scores = torch.cat(mlvl_scores)
         padding = mlvl_scores.new_zeros(mlvl_scores.shape[0], 1)
@@ -807,17 +779,18 @@ class FCOSMono3DHead(AnchorFreeMono3DHead):
                                        cfg['max_per_img'], cfg, mlvl_dir_scores,
                                        mlvl_attr_scores)
         bboxes, scores, labels, dir_scores, attrs = results
-        # left_bboxes = CameraInstance3DBoxes(
-        #     bboxes, box_dim=self.bbox_code_size, origin=(0.5, 1, 0.5))
-        # left_bboxes = xywhr2xyxyr(left_bboxes.bev)
+        left_bboxes = CameraInstance3DBoxes(
+            bboxes, box_dim=self.bbox_code_size, origin=(0.5, 1, 0.5))
+        left_bboxes = xywhr2xyxyr(left_bboxes.bev)
 
-        # gt_bboxes = bboxes.new_tensor(input_meta['gt_bboxes3d'])[:, [1, 2, 0, 4, 5, 3, 6, 7, 8]]
-        # gt_bboxes = CameraInstance3DBoxes(
-        #     gt_bboxes, box_dim=self.bbox_code_size, origin=(0.5, 1, 0.5))
-        # gt_bboxes = xywhr2xyxyr(gt_bboxes.bev)
+        gt_bboxes = bboxes.new_tensor(input_meta['gt_bboxes3d'])[:, [2, 1, 0, 5, 4, 3, 6, 7, 8]]
+        gt_bboxes = CameraInstance3DBoxes(
+            gt_bboxes, box_dim=self.bbox_code_size, origin=(0.5, 1, 0.5))
+        gt_bboxes = xywhr2xyxyr(gt_bboxes.bev)
+        
+        draw_boxes([left_bboxes, gt_bboxes], "./bev/{}_{}.png".format(input_meta['timestamp'], direction))
 
-        # draw_boxes([left_bboxes, gt_bboxes], "{}_{}_bboxes_left.png".format(input_meta['timestamp'], direction))
-        # bboxes = bboxes[:, [2, 0, 1, 5, 3, 4, 6, 7, 8]]
+        bboxes = bboxes[:, [2, 1, 0, 5, 4, 3, 6, 7, 8]]
         attrs = attrs.to(labels.dtype)  # change data type to int
         bboxes = CameraInstance3DBoxes(
             bboxes, box_dim=self.bbox_code_size, origin=(0.5, 1, 0.5))
@@ -998,6 +971,17 @@ class FCOSMono3DHead(AnchorFreeMono3DHead):
         num_gts = gt_labels.size(0)
         if not isinstance(gt_bboxes_3d, torch.Tensor):
             gt_bboxes_3d = gt_bboxes_3d.tensor.to(gt_bboxes.device)
+
+        grid_dists = []
+        start_idx = 0
+        for i, strd in enumerate(self.strides):
+            points_idx = (points[start_idx:start_idx+num_points_per_lvl[i]] - strd / 2) // strd
+            points_idx = points_idx.cpu().detach().numpy().astype(int)
+            grid_size = np.max(points_idx, axis = 0) + 1
+            grid_dist = np.zeros(grid_size) + INF
+            grid_dists.append(grid_dist.T)
+            start_idx += num_points_per_lvl[i]
+
         if num_gts == 0:
             return gt_labels.new_full((num_points,), self.background_label), \
                    gt_bboxes.new_zeros((num_points, 4)), \
@@ -1006,7 +990,8 @@ class FCOSMono3DHead(AnchorFreeMono3DHead):
                    gt_bboxes_3d.new_zeros((num_points, self.bbox_code_size)), \
                    gt_bboxes_3d.new_zeros((num_points,)), \
                    attr_labels.new_full(
-                       (num_points,), self.attr_background_label)
+                       (num_points,), self.attr_background_label), \
+                    grid_dists
 
         # change orientation to local yaw
         # gt_bboxes_3d[..., 6] = -torch.atan2(
@@ -1080,14 +1065,9 @@ class FCOSMono3DHead(AnchorFreeMono3DHead):
 
         min_dist, min_dist_inds = dists.min(dim=1)
         start_idx = 0
-        grid_dists = []
-        for i, strd in enumerate(self.strides):
-            points_idx = (points[start_idx:start_idx+num_points_per_lvl[i]] - strd / 2) // strd
-            points_idx = points_idx.cpu().detach().numpy().astype(int)
-            grid_size = np.max(points_idx, axis = 0) + 1
-            grid_dist = np.zeros(grid_size)
-            grid_dist[points_idx[:, 0], points_idx[:, 1]] = min_dist[start_idx:start_idx+num_points_per_lvl[i]].cpu().detach().numpy()
-            grid_dists.append(grid_dist.T)
+
+        for i in range(len(grid_dists)):
+            grid_dists[i] = (min_dist[start_idx:start_idx+num_points_per_lvl[i]].cpu().detach().numpy().T).reshape(grid_dists[i].shape)
             start_idx += num_points_per_lvl[i]
 
         labels = gt_labels[min_dist_inds]

@@ -4,9 +4,9 @@ import torch
 from mmcv.runner import BaseModule, force_fp32
 from torch import nn as nn
 
-from mmdet3d.core import (PseudoSampler, box3d_multiclass_nms, limit_period,
+from core import (PseudoSampler, box3d_multiclass_nms, limit_period,
                           xywhr2xyxyr)
-from mmdet.core import (build_assigner, build_bbox_coder,
+from core import (build_assigner, build_bbox_coder,
                         build_prior_generator, build_sampler, multi_apply)
 from ..builder import HEADS, build_loss
 from .train_mixins import AnchorTrainMixin
@@ -119,16 +119,15 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
         """Initialize the target assigner and sampler of the head."""
         if self.train_cfg is None:
             return
-
         if self.sampling:
             self.bbox_sampler = build_sampler(self.train_cfg.sampler)
         else:
             self.bbox_sampler = PseudoSampler()
-        if isinstance(self.train_cfg.assigner, dict):
-            self.bbox_assigner = build_assigner(self.train_cfg.assigner)
-        elif isinstance(self.train_cfg.assigner, list):
+        if isinstance(self.train_cfg["assigner"], dict):
+            self.bbox_assigner = build_assigner(self.train_cfg["assigner"])
+        elif isinstance(self.train_cfg["assigner"], list):
             self.bbox_assigner = [
-                build_assigner(res) for res in self.train_cfg.assigner
+                build_assigner(res) for res in self.train_cfg["assigner"]
             ]
 
     def _init_layers(self):

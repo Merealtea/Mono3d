@@ -2,8 +2,8 @@
 import numpy as np
 import torch
 
-from mmdet3d.core import limit_period
-from mmdet.core import images_to_levels, multi_apply
+from core import limit_period
+from core import images_to_levels, multi_apply
 
 
 class AnchorTrainMixin(object):

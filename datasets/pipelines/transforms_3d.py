@@ -429,3 +429,524 @@ class Resize():
         repr_str += f'keep_ratio={self.keep_ratio}, '
         repr_str += f'bbox_clip_border={self.bbox_clip_border})'
         return repr_str
+
+@PIPELINES.register_module()
+class Resize3D(Resize):
+    """Resize 3D labels.
+
+    Different from 2D Resize, we accept img_scale=None and ratio_range is not
+    None. In that case we will take the input img scale as the ori_scale for
+    rescaling with ratio_range.
+    """
+
+    def __init__(self,
+                 img_scale=None,
+                 multiscale_mode='range',
+                 ratio_range=None,
+                 keep_ratio=True,
+                 bbox_clip_border=True,
+                 backend='cv2',
+                 interpolation='nearest',
+                 override=False,
+                 cam2img_keep_ratio=False):
+        if img_scale is None:
+            self.img_scale = None
+        else:
+            if isinstance(img_scale, list):
+                self.img_scale = img_scale
+            else:
+                self.img_scale = [img_scale]
+            # assert mmcv.is_list_of(self.img_scale, tuple)
+
+        if ratio_range is None:
+            # mode 2: given multiple scales or a range of scales
+            assert multiscale_mode in ['value', 'range']
+
+        self.backend = backend
+        self.multiscale_mode = multiscale_mode
+        self.ratio_range = ratio_range
+        self.keep_ratio = keep_ratio
+        # TODO: refactor the override option in Resize
+        self.interpolation = interpolation
+        self.override = override
+        self.bbox_clip_border = bbox_clip_border
+        self.cam2img_keep_ratio = cam2img_keep_ratio
+
+    def _random_scale(self, results):
+        """Randomly sample an img_scale according to ``ratio_range`` and
+        ``multiscale_mode``.
+
+        If ``ratio_range`` is specified, a ratio will be sampled and be
+        multiplied with ``ori_scale``.
+        If multiple scales are specified by ``img_scale``, a scale will be
+        sampled according to ``multiscale_mode``.
+        Otherwise, single scale will be used.
+
+        Args:
+            results (dict): Result dict from :obj:`dataset`.
+
+        Returns:
+            dict: Two new keys 'scale` and 'scale_idx` are added into \
+                ``results``, which would be used by subsequent pipelines.
+        """
+        # ori_scale = results['img'].shape[:2]
+        # consider the ori_scale can be specified by self.img_scale
+        # if self.img_scale is not None:
+        #     ori_scale = self.img_scale[0]
+        # else:
+        #     ori_scale = results['img'].shape[:2]
+        # if self.ratio_range is not None:
+        #     scale, scale_idx = self.random_sample_ratio(
+        #         ori_scale, self.ratio_range)
+        # elif len(self.img_scale) == 1:
+        #     scale, scale_idx = self.img_scale[0], 0
+        # elif self.multiscale_mode == 'range':
+        #     scale, scale_idx = self.random_sample(self.img_scale)
+        # elif self.multiscale_mode == 'value':
+        #     scale, scale_idx = self.random_select(self.img_scale)
+        # else:
+        #     raise NotImplementedError
+
+        scale = max(self.img_scale[0] / results["img_shape"][0],
+                    self.img_scale[1] / results["img_shape"][1])
+
+        results['scale'] = scale
+        results['scale_idx'] = 0
+
+
+    def _resize_3d(self, results):
+        """Resize centers2d and modify camera intrinisc with
+        ``results['scale']``."""
+        if 'centers2d' in results:
+            results['centers2d'] *= results['scale_factor'][:2]
+        # resize image equals to change focal length and
+        # camera intrinsic
+        results['cam2img'][0] *= results['scale_factor'][0].repeat(
+            len(results['cam2img'][0]))
+        if self.cam2img_keep_ratio:
+            results['cam2img'][1] *= results['scale_factor'][0].repeat(
+                len(results['cam2img'][1]))
+        else:
+            results['cam2img'][1] *= results['scale_factor'][1].repeat(
+                len(results['cam2img'][1]))
+        if 'calib' in results:
+            assert self.keep_ratio, 'calib.scale only support ' \
+                'keep_ratio=True for now.'
+            results['calib'].scale(results['scale_factor'][0])
+
+    def __call__(self, results):
+        """Call function to resize images, bounding boxes, masks, semantic
+        segmentation map.
+
+        Args:
+            results (dict): Result dict from loading pipeline.
+
+        Returns:
+            dict: Resized results, 'img_shape', 'pad_shape', 'scale_factor', \
+                'keep_ratio' keys are added into result dict.
+        """
+        super(Resize3D, self).__call__(results)
+        self._resize_3d(results)
+
+        return results
+
+
+@PIPELINES.register_module()
+class MultiViewImagePhotoMetricDistortion(object):
+    """Apply photometric distortion to image sequentially, every transformation
+    is applied with a probability of 0.5. The position of random contrast is in
+    second or second to last.
+
+    1. random brightness
+    2. random contrast (mode 0)
+    3. convert color from BGR to HSV
+    4. random saturation
+    5. random hue
+    6. convert color from HSV to BGR
+    7. random contrast (mode 1)
+    8. randomly swap channels
+
+    Args:
+        brightness_delta (int): delta of brightness.
+        contrast_range (tuple): range of contrast.
+        saturation_range (tuple): range of saturation.
+        hue_delta (int): delta of hue.
+    """
+
+    def __init__(self,
+                 brightness_delta=32,
+                 contrast_range=(0.5, 1.5),
+                 saturation_range=(0.5, 1.5),
+                 hue_delta=18):
+        self.brightness_delta = brightness_delta
+        self.contrast_lower, self.contrast_upper = contrast_range
+        self.saturation_lower, self.saturation_upper = saturation_range
+        self.hue_delta = hue_delta
+
+    def __call__(self, results):
+        """Call function to perform photometric distortion on images.
+
+        Args:
+            results (dict): Result dict from loading pipeline.
+
+        Returns:
+            dict: Result dict with images distorted.
+        """
+        imgs = results['img']
+        new_imgs = []
+        for img in imgs:
+            assert img.dtype == np.float32, \
+                'PhotoMetricDistortion needs the input image of dtype '\
+                "np.float32, please set 'to_float32=True' in "\
+                "'LoadImageFromFile' pipeline"
+            # random brightness
+            if np.random.randint(2):
+                delta = np.random.uniform(-self.brightness_delta,
+                                          self.brightness_delta)
+                img += delta
+
+            # mode == 0 --> do random contrast first
+            # mode == 1 --> do random contrast last
+            mode = np.random.randint(2)
+            if mode == 1:
+                if np.random.randint(2):
+                    alpha = np.random.uniform(self.contrast_lower,
+                                              self.contrast_upper)
+                    img *= alpha
+
+            # convert color from BGR to HSV
+            img = mmcv.bgr2hsv(img)
+
+            # random saturation
+            if np.random.randint(2):
+                img[..., 1] *= np.random.uniform(self.saturation_lower,
+                                                 self.saturation_upper)
+
+            # random hue
+            if np.random.randint(2):
+                img[..., 0] += np.random.uniform(-self.hue_delta,
+                                                 self.hue_delta)
+                img[..., 0][img[..., 0] > 360] -= 360
+                img[..., 0][img[..., 0] < 0] += 360
+
+            # convert color from HSV to BGR
+            img = mmcv.hsv2bgr(img)
+
+            # random contrast
+            if mode == 0:
+                if np.random.randint(2):
+                    alpha = np.random.uniform(self.contrast_lower,
+                                              self.contrast_upper)
+                    img *= alpha
+
+            # randomly swap channels
+            if np.random.randint(2):
+                img = img[..., np.random.permutation(3)]
+            new_imgs.append(np.clip(img, 0, 255.0))
+        results['img'] = new_imgs
+        return results
+
+    def __repr__(self):
+        repr_str = self.__class__.__name__
+        repr_str += f'(\nbrightness_delta={self.brightness_delta},\n'
+        repr_str += 'contrast_range='
+        repr_str += f'{(self.contrast_lower, self.contrast_upper)},\n'
+        repr_str += 'saturation_range='
+        repr_str += f'{(self.saturation_lower, self.saturation_upper)},\n'
+        repr_str += f'hue_delta={self.hue_delta})'
+        return repr_str
+    
+
+@PIPELINES.register_module()
+class MultiViewImageResize3D(Resize3D):
+    """Random scale the image with modifying camera intrinsic. This function is
+    still unstable, required further testing.
+
+    Args:
+        img_scale: resolution for the output image
+        keep_ratio: keep the ratio between w and h
+        resize_depth: consider simltaneously resize depth (for training aug)
+        ratio_range:
+        override: do the resize more than one time.
+    """
+
+    def __init__(self,
+                 img_scale=None,
+                 multiscale_mode='range',
+                 ratio_range=None,
+                 keep_ratio=True,
+                 bbox_clip_border=True,
+                 backend='cv2',
+                 override=False):
+        super(MultiViewImageResize3D, self).__init__(
+            img_scale=img_scale,
+            multiscale_mode=multiscale_mode,
+            ratio_range=ratio_range,
+            keep_ratio=keep_ratio,
+            bbox_clip_border=bbox_clip_border,
+            backend=backend,
+            override=override)
+        # temporarily do not need these params
+        # because resize_depth=False & resize_intrinsic=True
+        # is an optimal setting surveyed before
+        # self.resize_depth = resize_depth
+        # self.rescale_intrinsic = rescale_intrinsic
+
+    def _random_scale(self, results):
+        """Randomly sample an img_scale according to ``ratio_range`` and
+        ``multiscale_mode``.
+
+        If ``ratio_range`` is specified, a ratio will be sampled and be
+        multiplied with ``ori_scale``.
+        If multiple scales are specified by ``img_scale``, a scale will be
+        sampled according to ``multiscale_mode``.
+        Otherwise, single scale will be used.
+
+        Args:
+            results (dict): Result dict from :obj:`dataset`.
+
+        Returns:
+            dict: Two new keys 'scale` and 'scale_idx` are added into \
+                ``results``, which would be used by subsequent pipelines.
+        """
+        # NOTE: we only support a single scale for multi-view for now
+        # TODO: support different scales for multi-view images
+        # ori_scale = results['img'].shape[:2]
+        # consider the ori_scale can be specified by self.img_scale
+        # if self.img_scale is not None:
+        #     ori_scale = self.img_scale[0]
+        # else:
+        #     ori_scale = results['img'][0].shape[:2]
+        # if self.ratio_range is not None:
+        #     scale, scale_idx = self.random_sample_ratio(
+        #         ori_scale, self.ratio_range)
+        # elif len(self.img_scale) == 1:
+        #     scale, scale_idx = self.img_scale[0], 0
+        # elif self.multiscale_mode == 'range':
+        #     scale, scale_idx = self.random_sample(self.img_scale)
+        # elif self.multiscale_mode == 'value':
+        #     scale, scale_idx = self.random_select(self.img_scale)
+        # else:
+        #     raise NotImplementedError
+
+        # results['scale'] = scale
+        # results['scale_idx'] = scale_idx
+
+        scale = max(self.img_scale[0] / results["img_shape"][0],
+                    self.img_scale[1] / results["img_shape"][1])
+
+        results['scale'] = scale
+        results['scale_idx'] = 0
+
+
+    def _resize_3d(self, results):
+        """Resize centers2d and modify camera intrinisc with
+        ``results['scale']``."""
+        if 'centers2d' in results:
+            results['centers2d'] *= results['scale_factor'][:2]
+        # resize image equals to change focal length and
+        # camera intrinsic
+        if 'cam2img' in results:
+            for idx, cam2img in enumerate(results['cam2img']):
+                cam2img[0] *= results['scale_factor'][0].repeat(
+                    len(cam2img[0]))
+                cam2img[1] *= results['scale_factor'][1].repeat(
+                    len(cam2img[0]))
+                results['cam2img'][idx] = cam2img
+                results['lidar2img'][idx] = cam2img @ results['lidar2cam'][idx]
+
+    def _resize_img(self, results):
+        """Resize images with list of inputs ``results['scale']``."""
+
+        # other with type of tensor
+        for idx, img in enumerate(results['img']):
+            if self.keep_ratio:
+                resized_img, scale_factor = mmcv.imrescale(
+                    img,
+                    results['scale'],
+                    return_scale=True,
+                    backend=self.backend)
+                # the w_scale and h_scale has minor difference
+                # a real fix should be done in the mmcv.imrescale in the future
+                new_h, new_w = resized_img.shape[:2]
+                h, w = img.shape[:2]
+                w_scale = new_w / w
+                h_scale = new_h / h
+            else:
+                resized_img, w_scale, h_scale = mmcv.imresize(
+                    img,
+                    results['scale'],
+                    return_scale=True,
+                    backend=self.backend)
+            results['img'][idx] = resized_img
+
+            scale_factor = np.array([w_scale, h_scale, w_scale, h_scale],
+                                    dtype=np.float32)
+
+        results['img_shape'] = results['img'][0].shape
+        # in case that there is no padding
+        results['pad_shape'] = results['img'][0].shape
+        results['scale_factor'] = scale_factor
+        results['keep_ratio'] = self.keep_ratio
+
+    def _resize_seg(self, results):
+        """Resize semantic segmentation map with ``results['scale']``."""
+        for key in results.get('seg_fields', []):
+            for idx, seg in enumerate(results[key]):
+                if self.keep_ratio:
+                    gt_seg = mmcv.imrescale(
+                        seg,
+                        results['scale'],
+                        interpolation='nearest',
+                        backend=self.backend)
+                else:
+                    gt_seg = mmcv.imresize(
+                        seg,
+                        results['scale'],
+                        interpolation='nearest',
+                        backend=self.backend)
+                results[key][idx] = gt_seg
+
+    def __call__(self, results):
+        # Assume the multiview image is in the same shape
+        # currently img is with the shape of [N, C, H, W, M]
+
+        # NOTE: remove the check scale_factor part due to multi-view imgs
+        if 'scale' not in results:
+            if 'scale_factor' in results:
+                self._random_scale(results)
+        else:
+            if not self.override:
+                assert 'scale_factor' not in results, (
+                    'scale and scale_factor cannot be both set.')
+            else:
+                results.pop('scale')
+                if 'scale_factor' in results:
+                    results.pop('scale_factor')
+                self._random_scale(results)
+
+        self._resize_img(results)
+        self._resize_bboxes(results)
+        self._resize_masks(results)
+        self._resize_3d(results)
+        return results
+
+@PIPELINES.register_module()
+class MultiViewImageNormalize(object):
+    """Normalize the image.
+
+    Args:
+        mean (sequence): Mean values of 3 channels.
+        std (sequence): Std values of 3 channels.
+        to_rgb (bool): Whether to convert the image from BGR to RGB,
+            default is true.
+    """
+
+    def __init__(self, mean, std, to_rgb=True):
+        self.mean = np.array(mean, dtype=np.float32)
+        self.std = np.array(std, dtype=np.float32)
+        self.to_rgb = to_rgb
+
+    def __call__(self, results):
+        """Call function to normalize images.
+
+        Args:
+            results (dict): Result dict from loading pipeline.
+
+        Returns:
+            dict: Normalized results, 'img_norm_cfg' key is added into
+                result dict.
+        """
+        results['img'] = [
+            mmcv.imnormalize(img, self.mean, self.std, self.to_rgb)
+            for img in results['img']
+        ]
+        results['img_norm_cfg'] = dict(
+            mean=self.mean, std=self.std, to_rgb=self.to_rgb)
+        return results
+
+    def __repr__(self):
+        repr_str = self.__class__.__name__
+        repr_str += \
+            f'(mean={self.mean}, std={self.std}, to_rgb={self.to_rgb})'
+        return repr_str
+
+
+
+@PIPELINES.register_module()
+class MultiViewImagePad(object):
+    """Pad the multi-view image.
+
+    There are two padding modes: (1) pad to a fixed size and (2) pad to the
+    minimum size that is divisible by some number.
+    Added keys are "pad_shape", "pad_fixed_size", "pad_size_divisor",
+
+    Args:
+        size (tuple, optional): Fixed padding size.
+        size_divisor (int, optional): The divisor of padded size.
+        pad_val (float, optional): Padding value, 0 by default.
+    """
+
+    def __init__(self, size=None, size_divisor=None, pad_val=0):
+        self.size = size
+        self.size_divisor = size_divisor
+        self.pad_val = pad_val
+        # only one of size and size_divisor should be valid
+        assert size is not None or size_divisor is not None
+        assert size is None or size_divisor is None
+
+    def _pad_img(self, results):
+        """Pad images according to ``self.size``."""
+
+        # should be the max shape of multi-view images
+        results['img_shape'] = [img.shape for img in results['img']]
+
+        if self.size is not None:
+            padded_img = [
+                mmcv.impad(img, shape=self.size, pad_val=self.pad_val)
+                for img in results['img']
+            ]
+        elif self.size_divisor is not None:
+            padded_img = [
+                mmcv.impad_to_multiple(
+                    img, self.size_divisor, pad_val=self.pad_val)
+                for img in results['img']
+            ]
+        results['img'] = padded_img
+
+        results['pad_shape'] = [img.shape for img in padded_img]
+        results['pad_fixed_size'] = self.size
+        results['pad_size_divisor'] = self.size_divisor
+
+    def _pad_seg_mask(self, results):
+        # TODO: set a custom value for seg_mask padding
+        # temporarily use pad_val=self.pad_val
+        for key in results.get('seg_fields', []):
+            padded_mask = [
+                mmcv.impad(
+                    mask,
+                    shape=results['pad_shape'][0][:2],
+                    pad_val=self.pad_val) for mask in results[key]
+            ]
+            results[key] = padded_mask
+
+    def __call__(self, results):
+        """Call function to pad images, masks, semantic segmentation maps.
+
+        Args:
+            results (dict): Result dict from loading pipeline.
+
+        Returns:
+            dict: Updated result dict.
+        """
+        self._pad_img(results)
+        self._pad_seg_mask(results)
+
+        return results
+
+    def __repr__(self):
+        repr_str = self.__class__.__name__
+        repr_str += f'(size={self.size}, '
+        repr_str += f'size_divisor={self.size_divisor}, '
+        repr_str += f'pad_val={self.pad_val})'
+        return repr_str

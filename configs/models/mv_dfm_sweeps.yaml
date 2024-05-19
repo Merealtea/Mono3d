@@ -1,0 +1,116 @@
+type : 'MultiViewDfM'
+backbone : 
+    type : 'ResNet'
+    depth : 101
+    num_stages : 4
+    out_indices : [0, 1, 2, 3]
+    frozen_stages : 1
+    norm_cfg : 
+      type : 'BN' 
+      requires_grad : False
+    norm_eval : True
+    style : 'pytorch'
+    init_cfg : 
+        type : 'Pretrained'
+        checkpoint : '/mnt/lustre/wangtai/pretrained_models/resnet101-63fe2227.pth'
+    dcn : 
+      type : 'DCNv2' 
+      deform_groups : 1 
+      fallback_on_stride : False
+    stage_with_dcn : [False, False, True, True]
+neck : 
+    type : 'FPN'
+    in_channels : [256, 512, 1024, 2048]
+    out_channels : 64
+    num_outs : 4
+neck_2d : 
+bbox_head_2d : 
+backbone_stereo : 
+depth_head : 
+backbone_3d : 
+neck_3d : 
+    type : 'DfMNeck' 
+    in_channels : 64 
+    out_channels : 256
+    num_frames : 1  # num_frames : num_ref_frames+1
+valid_sample : True
+temporal_aggregate : 'concat'
+voxel_size : [0.5, 0.5, 0.5]  # n_voxels : [240, 300, 12]
+anchor_generator : 
+    type : 'AlignedAnchor3DRangeGenerator'
+    ranges : &range [[-10.0, -10.0, -2, 10.0, 10.0, 1]]
+    rotations : [.0]
+bbox_head_3d : 
+    type : 'Anchor3DHead'
+    num_classes : 3
+    in_channels : 256
+    feat_channels : 256
+    use_direction_classifier : True
+    anchor_generator : 
+        type : 'AlignedAnchor3DRangeGenerator'
+        ranges : *range
+        sizes : [
+            [0.91, 0.84, 1.74],  # pedestrian
+            [1.81, 0.84, 1.77],  # cyclist
+            [4.73, 2.08, 1.77],  # car
+        ]
+        rotations : [0, 1.57]
+        reshape_out : False
+    diff_rad_by_sin : True
+    dir_offset : -0.7854  # -pi / 4
+    bbox_coder : 
+      type : 'DeltaXYZWLHRBBoxCoder'
+    loss_cls : 
+        type : 'FocalLoss'
+        use_sigmoid : True
+        gamma : 2.0
+        alpha : 0.25
+        loss_weight : 1.0
+    loss_bbox : 
+      type : 'SmoothL1Loss' 
+      beta : 1
+      loss_weight : 2.0
+    loss_dir : 
+        type : 'CrossEntropyLoss' 
+        use_sigmoid : False 
+        loss_weight : 0.2
+train_cfg : 
+    assigner : 
+      -
+        # for Pedestrian
+            type : 'MaxIoUAssigner'
+            iou_calculator : 
+              type : 'BboxOverlapsNearest3D'
+            pos_iou_thr : 0.5
+            neg_iou_thr : 0.35
+            min_pos_iou : 0.35
+            ignore_iof_thr : -1
+      # -
+      #   # for Cyclist
+      #       type : 'MaxIoUAssigner'
+      #       iou_calculator : 
+      #         type : 'BboxOverlapsNearest3D'
+      #       pos_iou_thr : 0.5
+      #       neg_iou_thr : 0.35
+      #       min_pos_iou : 0.35
+      #       ignore_iof_thr : -1
+      # -
+      #   # for Car
+      #       type : 'MaxIoUAssigner'
+      #       iou_calculator : 
+      #         type : 'BboxOverlapsNearest3D'
+      #       pos_iou_thr : 0.6
+      #       neg_iou_thr : 0.45
+      #       min_pos_iou : 0.45
+      #       ignore_iof_thr : -1
+    allowed_border : 0
+    pos_weight : -1
+    debug : False
+test_cfg : 
+    use_rotate_nms : True
+    nms_across_levels : False
+    nms_thr : 0.05
+    score_thr : 0.001
+    min_bbox_size : 0
+    nms_pre : 500
+    max_num : 100
