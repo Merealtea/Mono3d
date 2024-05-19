@@ -21,7 +21,7 @@ import pickle
 from configs.FisheyeParam import CamModel
 
 import tensorboardX
-from utils import init_random_seed, calculate_corners_cam, plot_rect3d_on_img
+from utilities import init_random_seed, calculate_corners_cam, plot_rect3d_on_img
 
 def to_device(data, device):
     if isinstance(data, torch.Tensor):
@@ -43,7 +43,8 @@ def clip_grads(params, grad_clip):
 def create_lr_scheduler(optimizer,
                         init_lr : float,
                         warmup_iters: int,
-                        warmup_ratio=1e-3):
+                        warmup_ratio=1e-3
+                        ):
     """
     :param optimizer: 优化器
     :param num_step: 每个epoch迭代多少次，len(data_loader)
@@ -53,7 +54,7 @@ def create_lr_scheduler(optimizer,
     :param warmup_factor: warmup的一个倍数因子
     :return:
     """
-
+    # TODO: Add learning rate decay
     def f(cur_iters):
         if cur_iters < warmup_iters:
             k = cur_iters / warmup_iters
@@ -87,16 +88,16 @@ def main():
     start_epoch = 0
     if args.last_ckpt is not None:
         save_path = args.last_ckpt
-        cfg = yaml.load(open(os.path.join(save_path, 'config', 'train_config.yaml')), Loader=yaml.FullLoader)
+        cfg = yaml.safe_load(open(os.path.join(save_path, 'config', 'train_config.yaml')))
         tensorboard_path = os.path.join(save_path, 'tensorboard')
 
         # load dataset
         with open(os.path.join(save_path, 'config', 'dataset_config.yaml')) as f:
-            dataset_cfg = yaml.load(f, Loader=yaml.FullLoader)
+            dataset_cfg = yaml.safe_load(f)
 
         # load model
         with open(os.path.join(save_path, 'config', 'model_config.yaml')) as f:
-            model_cfg = yaml.load(f, Loader=yaml.FullLoader)
+            model_cfg = yaml.safe_load(f)
 
         for file in os.listdir(save_path):
             if file.endswith(".pth"):
@@ -106,7 +107,7 @@ def main():
                     ckpt_file = os.path.join(save_path, file)
     else:
         with open(args.config) as f:
-            cfg = yaml.load(f, Loader=yaml.FullLoader)
+            cfg = yaml.safe_load(f)
 
         # Create save folder to save the ckpt
         save_path = cfg['save_path']
@@ -121,42 +122,38 @@ def main():
 
         # save config file
         with open(os.path.join(config_save_path, 'train_config.yaml'), 'w') as f:
-            yaml.dump(cfg, f)
+            yaml.safe_dump(cfg, f)
 
         # load dataset
         with open(cfg['dataset_config']) as f:
-            dataset_cfg = yaml.load(f, Loader=yaml.FullLoader)
+            dataset_cfg = yaml.safe_load(f)
 
         # save dataset config
         with open(os.path.join(config_save_path, 'dataset_config.yaml'), 'w') as f:
-            yaml.dump(dataset_cfg, f)
+            yaml.safe_dump(dataset_cfg, f)
 
         # load model
         with open(cfg['model_config']) as f:
-            model_cfg = yaml.load(f, Loader=yaml.FullLoader)
+            model_cfg = yaml.safe_load(f)
 
         # save model config 
         with open(os.path.join(config_save_path, 'model_config.yaml'), 'w') as f:
-            yaml.dump(model_cfg, f)
+            yaml.safe_dump(model_cfg, f)
 
     # create tensorboard writer
     writer = tensorboardX.SummaryWriter(tensorboard_path)
 
-    dataset = build_dataset(dataset_cfg, 
-            data_root=cfg["data_root"],
-            annotation_prefix=cfg["annotation_prefix"],
-            image_prefix=cfg["image_prefix"], 
-            eval=False       
-    )
+    dataset_cfg["data_root"] = cfg["data_root"]
+    dataset_cfg["ann_prefix"] = cfg["annotation_prefix"]
+    dataset_cfg["img_prefix"] = cfg["image_prefix"]   
+    dataset_cfg['eval'] = False
+    dataset = build_dataset(dataset_cfg)
 
-    val_dataset = build_dataset(dataset_cfg,
-            data_root=cfg["data_root"],
-            annotation_prefix=cfg["annotation_prefix"],
-            image_prefix=cfg["image_prefix"],
-            eval=True
-    )
+    dataset_cfg['eval'] = True
+    val_dataset = build_dataset(dataset_cfg)
 
     val_loss = 1000
+
     model = build_detector(model_cfg)
     total_epochs = cfg['epoches']
     batch_size = cfg['batch_size']
@@ -193,8 +190,13 @@ def main():
         param.requires_grad = False
     
     # setup optimizer and hyper parameters
-    optimizer = torch.optim.Adam(model.parameters(), 
-                                lr=cfg["optimizer"]['lr'])
+    if 'type' in cfg['optimizer']:
+        optimizer = getattr(torch.optim, cfg['optimizer']['type'])(model.parameters(),
+                                    lr=cfg['optimizer']['lr'],
+                                    weight_decay=cfg['optimizer']['weight_decay'])
+    else:
+        optimizer = torch.optim.Adam(model.parameters(), 
+                                    lr=cfg["optimizer"]['lr'])
     lr_scheduler = create_lr_scheduler(optimizer, cfg["optimizer"]['lr'], 
                                        cfg['lr_config']['warmup_iters'], 
                                        cfg["lr_config"]['warmup_ratio'])
@@ -203,7 +205,6 @@ def main():
     # train model
     for epoch in range(start_epoch, total_epochs):
         for i, data in tqdm(enumerate(train_loader)):
-
             optimizer.zero_grad()
             to_device(data, device)
             data['img_metas'][0]['epoch'] = epoch
@@ -303,8 +304,6 @@ def main():
                             for idx, (bbox, img_meta) in enumerate(zip(bbox_res, data['img_metas'])):
                                 # extract bbox from bbox_res
                                 bbox = bbox['img_bbox']['boxes_3d'].tensor.cpu().numpy()[:, :7]
-                                if (len(bbox) == 0):
-                                    continue
                                 gt_bbox = data['gt_bboxes_3d'][idx].cpu().numpy()[:, :7]
                                 direction = img_meta["direction"]
                                 world2cam_mat = cam_models[direction].world2cam_mat
@@ -334,20 +333,27 @@ def main():
                         to_device(data, device)
                         bbox_res = model([data['img']], [data['img_metas']], return_loss = False)
                         # save bbox_res
-                        for bbox, img_meta in zip(bbox_res, data['img_metas']):
+                        for idx ,(bbox, img_meta) in enumerate(zip(bbox_res, data['img_metas'])):
                             # extract bbox from bbox_res
                             bbox = bbox['img_bbox']['boxes_3d'].tensor.cpu().numpy()[:, :7]
+                            gt_bbox = data['gt_bboxes_3d'][idx].cpu().numpy()[:, :7]
                             bboxes = []
-                            if (len(bbox) != 0):
-                                direction = img_meta["direction"]
-                                world2cam_mat = cam_models[direction].world2cam_mat
-                                corners = calculate_corners_cam(bbox, world2cam_mat).reshape(-1, 8, 3)
-                                for corner in corners:
-                                    pixel_uv = cam_models[direction].cam2image(corner.T).T
-                                    if pixel_uv.shape[0] == 8:
-                                        bboxes.append(pixel_uv)
+                            direction = img_meta["direction"]
+                            world2cam_mat = cam_models[direction].world2cam_mat
+                            corners = calculate_corners_cam(bbox, world2cam_mat).reshape(-1, 8, 3)
+                            gt_corners = calculate_corners_cam(gt_bbox, world2cam_mat).reshape(-1, 8, 3)
+                            for corner in corners:
+                                pixel_uv = cam_models[direction].cam2image(corner.T).T
+                                if pixel_uv.shape[0] == 8:
+                                    bboxes.append(pixel_uv)
+                            gt_bboxes = []
+                            for corner in gt_corners:
+                                pixel_uv = cam_models[direction].cam2image(corner.T).T
+                                if pixel_uv.shape[0] == 8:
+                                    gt_bboxes.append(pixel_uv)
                             img = cv2.imread(img_meta['filename'])
-                            img = plot_rect3d_on_img(img, len(bboxes), bboxes)
+                            img = plot_rect3d_on_img(img, len(gt_bboxes), gt_bboxes, color=(0, 255, 0))
+                            img = plot_rect3d_on_img(img, len(bboxes), bboxes, color=(0, 0, 255))
                             cv2.imwrite(os.path.join(bbox_res_path, f"{img_meta['timestamp']}.jpg"), img)   
             model.train()
 if __name__ == '__main__':

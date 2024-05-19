@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import cv2
-
+from copy import deepcopy
 def init_random_seed(seed=None):
     if seed is None:
         seed = np.random.randint(2**32 - 1)
@@ -23,8 +23,10 @@ def extract_rotation_matrix(affine_matrix):
 
 def calculate_corners_cam(bbox, world2cam_mat):
     # Extracting components of the bounding box
+    bbox_copy = deepcopy(bbox)
+    bbox_copy[:, :2] *= 1.2
     xyz, length, width, height, yaw =\
-         bbox[:, 0:3], bbox[:, 3], bbox[:, 4], bbox[:, 5], bbox[:, 6]
+         bbox_copy[:, 0:3], bbox_copy[:, 3], bbox_copy[:, 4], bbox_copy[:, 5], bbox_copy[:, 6]
 
     # Define half dimensions for convenience
     half_length = length / 2
