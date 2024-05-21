@@ -1,6 +1,7 @@
 dataset_type : &dataset_type 'CustomMV3DDataset'
 class_names : &class_names ['Pedestrian']
 multiview_indices : ['left', 'right', 'front', 'back']
+num_ref_frames : 0
 input_modality : &input_modality
   use_lidar : False 
   use_camera : True
@@ -36,6 +37,7 @@ train_pipeline : &train_pipeline
       with_bbox_3d : True
       with_label_3d : True
       with_attr_label : False
+      with_vel : False
     -
       type : 'MultiViewImageNormalize'
       << : *img_norm_cfg

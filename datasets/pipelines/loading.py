@@ -136,6 +136,7 @@ class LoadMultiViewImageFromFiles(object):
         if self.to_float32:
             img = img.astype(np.float32)
         results['filename'] = filename
+        results["num_views"] = len(filename)
         # unravel to list, see `DefaultFormatBundle` in formatting.py
         # which will transpose each image separately and then stack into array
         results['img'] = [img[..., i] for i in range(img.shape[-1])]
@@ -201,13 +202,15 @@ class LoadAnnotations3D():
                  with_attr_label=False,
                  with_bbox=False,
                  with_label=False,
-                 with_bbox_depth=False,):
+                 with_bbox_depth=False,
+                 with_vel=True):
         self.with_bbox = with_bbox
         self.with_label = with_label
         self.with_bbox_3d = with_bbox_3d
         self.with_bbox_depth = with_bbox_depth
         self.with_label_3d = with_label_3d
         self.with_attr_label = with_attr_label
+        self.with_vel = with_vel
 
     def _load_bboxes(self, results):
         """Private function to load 2D bounding box annotations.
@@ -250,6 +253,8 @@ class LoadAnnotations3D():
             results["gt_bboxes_3d"].append(ann['bbox3d'])
 
         results['gt_bboxes_3d'] = np.array(results['gt_bboxes_3d']).reshape(-1, 9)
+        if not self.with_vel:
+            results['gt_bboxes_3d'] = results['gt_bboxes_3d'][:, :-2]
         return results
 
     def _load_bboxes_depth(self, results):
@@ -297,7 +302,7 @@ class LoadAnnotations3D():
             if 'label_3d' in ann:
                 results['gt_labels_3d'].append(ann['label_3d'])
             else:
-                results['gt_labels_3d'].append(0)
+                results['gt_labels_3d'].append([0] * len(ann['bbox3d']))
         results['gt_labels_3d'] = np.array(results['gt_labels_3d']).reshape(-1)
         results['attr_labels'] = np.zeros_like(results['gt_labels_3d'])
         results['gt_labels'] = np.zeros_like(results['gt_labels_3d'])

@@ -9,10 +9,11 @@ from .tblr_bbox_coder import TBLRBBoxCoder
 from .yolo_bbox_coder import YOLOBBoxCoder
 from .delta_xyzwhlr_bbox_coder import DeltaXYZWLHRBBoxCoder
 from .fcos3d_bbox_coder import FCOS3DBBoxCoder
+from .pgd_bbox_coder import PGDBBoxCoder
 
 __all__ = [
     'BaseBBoxCoder', 'PseudoBBoxCoder', 'DeltaXYWHBBoxCoder',
     'LegacyDeltaXYWHBBoxCoder', 'TBLRBBoxCoder', 'YOLOBBoxCoder',
     'BucketingBBoxCoder', 'DistancePointBBoxCoder', 'DeltaXYZWLHRBBoxCoder',
-    'FCOS3DBBoxCoder'
+    'FCOS3DBBoxCoder', 'PGDBBoxCoder'
 ]

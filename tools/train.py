@@ -65,6 +65,9 @@ def create_lr_scheduler(optimizer,
         # （1-a/b）^0.9 b是当前这个epoch结束训练总共了多少次了（除去warmup），这个关系是指一个epcoch中
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=f)
 
+def detection_visualization(detection_result, img_meta, cam_model):
+    pass
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a detector')
@@ -208,46 +211,24 @@ def main():
             optimizer.zero_grad()
             to_device(data, device)
             data['img_metas'][0]['epoch'] = epoch
-            loss_res = model(data['img'], data['img_metas'], return_loss = True,
-                        gt_bboxes = data['gt_bboxes'],
-                        gt_labels = data['gt_labels'],
-                        gt_bboxes_3d = data['gt_bboxes_3d'],
-                        gt_labels_3d = data['gt_labels_3d'],
-                        centers2d = data['centers2d'],
-                        depths = data['depths']
-                        )
-
-            loss = loss_res['loss_cls'] +\
-                    loss_res['loss_depth']  + \
-                    loss_res['loss_size'] + \
-                    loss_res['loss_rotsin'] + \
-                    loss_res['loss_offset'] + \
-                    loss_res['loss_centerness'] 
-            
-            print(f"Epoch: {epoch}, Iter: {i}, Loss: {loss.item()}\n",
-                    f"Loss cls: {loss_res['loss_cls'].item()}\n",
-                    f"Loss depth: {loss_res['loss_depth'].item()}\n",
-                    f"Loss size: {loss_res['loss_size'].item()}\n",
-                    f"Loss rotsin: {loss_res['loss_rotsin'].item()}\n",
-                    f"Loss offset: {loss_res['loss_offset'].item()}\n",
-                    f"Loss centerness: {loss_res['loss_centerness'].item()}\n"
-            )
+            data["return_loss"] = True
+            loss_res = model(**data)
+            loss = sum([loss_res[key][0] for key in loss_res])
             
             # record loss
             writer.add_scalar('train loss', loss.item(), epoch * len(train_loader) + i)
-            # record loss details
-            writer.add_scalar('train loss cls', loss_res['loss_cls'].item(), epoch * len(train_loader) + i)
-            writer.add_scalar('train loss depth', loss_res['loss_depth'].item(), epoch * len(train_loader) + i)
-            writer.add_scalar('train loss size', loss_res['loss_size'].item(), epoch * len(train_loader) + i)
-            writer.add_scalar('train loss rotsin', loss_res['loss_rotsin'].item(), epoch * len(train_loader) + i)
-            writer.add_scalar('train loss offset', loss_res['loss_offset'].item(), epoch * len(train_loader) + i)
-            writer.add_scalar('train loss centerness', loss_res['loss_centerness'].item(), epoch * len(train_loader) + i)
+            for key in loss_res:
+                writer.add_scalar(f'train loss {key}', loss_res[key][0].item(), epoch * len(train_loader) + i)
 
+            # print loss
+            print("Epoch: ", epoch, "Iter: ", i, "Loss: ", loss.item())
+            for key in loss_res:
+                print(f"   Loss {key}: {loss_res[key][0].item()}")        
+            
             loss.backward()
-
             if grad_clip_cfg is not None:
                 clip_grads(model.parameters(), grad_clip_cfg)
-
+            
             optimizer.step()
             lr_scheduler.step()
 
@@ -258,39 +239,21 @@ def main():
                 val_epoch = epoch // eval_interval
                 for i, data in tqdm(enumerate(val_loader)):
                     to_device(data, device)
+                    data["return_loss"] = False
                     data['img_metas'][0]['test'] = 1
-                    loss_res = model(data['img'], data['img_metas'], return_loss = True,
-                            gt_bboxes = data['gt_bboxes'],
-                            gt_labels = data['gt_labels'],
-                            gt_bboxes_3d = data['gt_bboxes_3d'],
-                            gt_labels_3d = data['gt_labels_3d'],
-                            centers2d = data['centers2d'],
-                            depths = data['depths']
-                            )
-                    
-                    loss = loss_res['loss_cls'] +\
-                        loss_res['loss_depth'] + \
-                        loss_res['loss_size'] + \
-                        loss_res['loss_rotsin'] + \
-                        loss_res['loss_offset'] + \
-                        loss_res['loss_centerness'] 
-                    
+                    loss_res = model(**data)
+                    loss = sum([loss_res[key][0] for key in loss_res])
+
                     # record loss
                     writer.add_scalar('val loss', loss.item(), val_epoch * len(val_loader) + i)
-                    # record loss details
-                    writer.add_scalar('val loss cls', loss_res['loss_cls'].item(), val_epoch * len(val_loader) + i)
-                    writer.add_scalar('val loss depth', loss_res['loss_depth'].item(), val_epoch * len(val_loader) + i)
-                    writer.add_scalar('val loss size', loss_res['loss_size'].item(), val_epoch * len(val_loader) + i)
-                    writer.add_scalar('val loss rotsin', loss_res['loss_rotsin'].item(), val_epoch * len(val_loader) + i)
-                    writer.add_scalar('val loss offset', loss_res['loss_offset'].item(), val_epoch * len(val_loader) + i)
-                    writer.add_scalar('val loss centerness', loss_res['loss_centerness'].item(), val_epoch * len(val_loader) + i)
-                    # if val_loss > loss.item():
-                    #     val_loss = loss.item()
-                        # save model
+                    for key in loss_res:
+                        writer.add_scalar(f'val loss {key}', loss_res[key][0].item(), val_epoch * len(val_loader) + i)
+                    
                 if epoch % 10 == 0:
                     torch.save(model.state_dict(), f"{save_path}/epoch_{epoch}.pth")
                     print(f"Save best model at epoch {epoch}")
-            if epoch > total_epochs -11:
+
+            if epoch >= 0: # total_epochs -11:
                 bbox_res_path = os.path.join(save_path, f"{epoch}", "val_bbox_pre")
                 bbox_train_res_path = os.path.join(save_path, f"{epoch}", "train_bbox_pre")
                 create_folder(bbox_res_path)
@@ -298,34 +261,34 @@ def main():
                             
                 with torch.no_grad():
                     for i, data in tqdm(enumerate(train_loader)):
-                            to_device(data, device)
-                            bbox_res = model([data['img']], [data['img_metas']], return_loss = False)
-                            # save bbox_res
-                            for idx, (bbox, img_meta) in enumerate(zip(bbox_res, data['img_metas'])):
-                                # extract bbox from bbox_res
-                                bbox = bbox['img_bbox']['boxes_3d'].tensor.cpu().numpy()[:, :7]
-                                gt_bbox = data['gt_bboxes_3d'][idx].cpu().numpy()[:, :7]
-                                direction = img_meta["direction"]
-                                world2cam_mat = cam_models[direction].world2cam_mat
-                                corners = calculate_corners_cam(bbox, world2cam_mat).reshape(-1, 8, 3)
-                                gt_corners = calculate_corners_cam(gt_bbox, world2cam_mat).reshape(-1, 8, 3)
-                                bboxes = []
-                                for corner in corners:
-                                    pixel_uv = cam_models[direction].cam2image(corner.T).T
-                                    if pixel_uv.shape[0] == 8:
-                                        bboxes.append(pixel_uv)
-                                
-                                img = cv2.imread(img_meta['filename'])
-                                img = plot_rect3d_on_img(img, len(bboxes), bboxes, color=(0, 0, 255))
-
-                                gt_bboxes = []
-                                for corner in gt_corners:
-                                    pixel_uv = cam_models[direction].cam2image(corner.T).T
-                                    if pixel_uv.shape[0] == 8:
-                                        gt_bboxes.append(pixel_uv)
+                        to_device(data, device)
+                        bbox_res = model([data['img']], [data['img_metas']], return_loss = False)
+                        # save bbox_res
+                        for idx, (bbox, img_meta) in enumerate(zip(bbox_res, data['img_metas'])):
+                            # extract bbox from bbox_res
+                            bbox = bbox['img_bbox']['boxes_3d'].tensor.cpu().numpy()[:, :7]
+                            gt_bbox = data['gt_bboxes_3d'][idx].cpu().numpy()[:, :7]
+                            direction = img_meta["direction"]
+                            world2cam_mat = cam_models[direction].world2cam_mat
+                            corners = calculate_corners_cam(bbox, world2cam_mat).reshape(-1, 8, 3)
+                            gt_corners = calculate_corners_cam(gt_bbox, world2cam_mat).reshape(-1, 8, 3)
+                            bboxes = []
+                            for corner in corners:
+                                pixel_uv = cam_models[direction].cam2image(corner.T).T
+                                if pixel_uv.shape[0] == 8:
+                                    bboxes.append(pixel_uv)
                             
-                                img = plot_rect3d_on_img(img, len(gt_bboxes), gt_bboxes, color=(0, 255, 0))
-                                cv2.imwrite(os.path.join(bbox_train_res_path, f"{img_meta['timestamp']}.jpg"), img)
+                            img = cv2.imread(img_meta['filename'])
+                            img = plot_rect3d_on_img(img, len(bboxes), bboxes, color=(0, 0, 255))
+
+                            gt_bboxes = []
+                            for corner in gt_corners:
+                                pixel_uv = cam_models[direction].cam2image(corner.T).T
+                                if pixel_uv.shape[0] == 8:
+                                    gt_bboxes.append(pixel_uv)
+                        
+                            img = plot_rect3d_on_img(img, len(gt_bboxes), gt_bboxes, color=(0, 255, 0))
+                            cv2.imwrite(os.path.join(bbox_train_res_path, f"{img_meta['timestamp']}.jpg"), img)
                     
                 with torch.no_grad():
                     val_epoch = epoch // eval_interval
@@ -356,5 +319,7 @@ def main():
                             img = plot_rect3d_on_img(img, len(bboxes), bboxes, color=(0, 0, 255))
                             cv2.imwrite(os.path.join(bbox_res_path, f"{img_meta['timestamp']}.jpg"), img)   
             model.train()
+
+
 if __name__ == '__main__':
     main()

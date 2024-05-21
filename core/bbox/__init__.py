@@ -3,7 +3,7 @@ from .assigners import (AssignResult, BaseAssigner, CenterRegionAssigner,
                         MaxIoUAssigner, RegionAssigner, MaskHungarianAssigner)
 from .builder import build_assigner, build_bbox_coder, build_sampler
 from .coder import (BaseBBoxCoder, DeltaXYWHBBoxCoder, DistancePointBBoxCoder,
-                    PseudoBBoxCoder, TBLRBBoxCoder, DeltaXYZWLHRBBoxCoder)
+                    PseudoBBoxCoder, TBLRBBoxCoder, DeltaXYZWLHRBBoxCoder, PGDBBoxCoder, FCOS3DBBoxCoder)
 from .iou_calculators import BboxOverlaps2D, bbox_overlaps, BboxOverlaps3D, bbox_overlaps_3d
 from .samplers import (BaseSampler, CombinedSampler,
                        InstanceBalancedPosSampler, IoUBalancedNegSampler,
@@ -24,5 +24,5 @@ __all__ = [
     'CenterRegionAssigner', 'bbox_rescale', 'bbox_cxcywh_to_xyxy',
     'bbox_xyxy_to_cxcywh', 'RegionAssigner', 'find_inside_bboxes', "xywhr2xyxyr",
      "limit_period", "CameraInstance3DBoxes", "points_img2cam", "bbox3d2result", "bbox3d_mapping_back",
-     "BboxOverlaps3D", "bbox_overlaps_3d"
+     "BboxOverlaps3D", "bbox_overlaps_3d", "PGDBBoxCoder", "FCOS3DBBoxCoder"
 ]

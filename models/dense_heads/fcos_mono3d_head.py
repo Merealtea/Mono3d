@@ -412,23 +412,23 @@ class FCOSMono3DHead(AnchorFreeMono3DHead):
                     cls_preds.append(flatten_cls_scores[start_idx:start_idx + len(img_metas) * featmap_size[0] * featmap_size[1]].reshape(len(img_metas), featmap_size[0], featmap_size[1]))
                     start_idx += len(img_metas) * featmap_size[0] * featmap_size[1]
 
-                for img_idx, (img_meta, grid) in enumerate(zip(img_metas, grid_dist)):
-                    timestamp = img_meta['timestamp']
-                    direction = img_meta['direction']
-                    for strd_idx, (strd, g) in enumerate(zip(self.strides, grid)):
-                        g[g == 1e8] = 255
-                        g = g.astype(np.uint8)
-                        centerness_map = (torch.sigmoid(centernesses[strd_idx][img_idx]).detach().cpu().numpy()[0] * 255).astype(np.uint8)
-                        cls_pred_map = (cls_preds[strd_idx][img_idx].detach().cpu().numpy() * 255).astype(np.uint8)
-                        centerness_map_target = (centerness_targets[strd_idx].reshape(-1, centerness_map.shape[0], centerness_map.shape[1])[img_idx].detach().cpu().numpy() * 255).astype(np.uint8)
+                # for img_idx, (img_meta, grid) in enumerate(zip(img_metas, grid_dist)):
+                #     timestamp = img_meta['timestamp']
+                #     direction = img_meta['direction']
+                #     for strd_idx, (strd, g) in enumerate(zip(self.strides, grid)):
+                #         g[g == 1e8] = 255
+                #         g = g.astype(np.uint8)
+                #         centerness_map = (torch.sigmoid(centernesses[strd_idx][img_idx]).detach().cpu().numpy()[0] * 255).astype(np.uint8)
+                #         cls_pred_map = (cls_preds[strd_idx][img_idx].detach().cpu().numpy() * 255).astype(np.uint8)
+                #         centerness_map_target = (centerness_targets[strd_idx].reshape(-1, centerness_map.shape[0], centerness_map.shape[1])[img_idx].detach().cpu().numpy() * 255).astype(np.uint8)
 
-                        concat_img = np.concatenate([np.concatenate([centerness_map, centerness_map_target], axis = 1),
-                                                np.concatenate([g, cls_pred_map], axis = 1)])
+                #         concat_img = np.concatenate([np.concatenate([centerness_map, centerness_map_target], axis = 1),
+                #                                 np.concatenate([g, cls_pred_map], axis = 1)])
 
-                        if not os.path.exists(f"./grid/{epoch}"):
-                            os.makedirs(f"./grid/{epoch}")
-                        cv2.imwrite(f"./grid/{epoch}/{timestamp}_{direction}_{strd}.png", concat_img)
-                    break
+                #         # if not os.path.exists(f"./grid/{epoch}"):
+                #         #     os.makedirs(f"./grid/{epoch}")
+                #         # cv2.imwrite(f"./grid/{epoch}/{timestamp}_{direction}_{strd}.png", concat_img)
+                #     break
 
         loss_cls = self.loss_cls(
             flatten_cls_scores,
@@ -642,8 +642,8 @@ class FCOSMono3DHead(AnchorFreeMono3DHead):
                 centernesses[i][img_id].detach() for i in range(num_levels)
             ]
             input_meta = img_metas[img_id]
-            if not os.path.exists(f"./bev/"):
-                os.makedirs(f"./bev/")
+            # if not os.path.exists(f"./bev/"):
+            #     os.makedirs(f"./bev/")
             det_bboxes = self._get_bboxes_single(
                 cls_score_list, bbox_pred_list, dir_cls_pred_list,
                 attr_pred_list, centerness_pred_list, mlvl_points, input_meta,
@@ -779,16 +779,16 @@ class FCOSMono3DHead(AnchorFreeMono3DHead):
                                        cfg['max_per_img'], cfg, mlvl_dir_scores,
                                        mlvl_attr_scores)
         bboxes, scores, labels, dir_scores, attrs = results
-        left_bboxes = CameraInstance3DBoxes(
-            bboxes, box_dim=self.bbox_code_size, origin=(0.5, 1, 0.5))
-        left_bboxes = xywhr2xyxyr(left_bboxes.bev)
+        # left_bboxes = CameraInstance3DBoxes(
+        #     bboxes, box_dim=self.bbox_code_size, origin=(0.5, 1, 0.5))
+        # left_bboxes = xywhr2xyxyr(left_bboxes.bev)
 
-        gt_bboxes = bboxes.new_tensor(input_meta['gt_bboxes3d'])[:, [2, 1, 0, 5, 4, 3, 6, 7, 8]]
-        gt_bboxes = CameraInstance3DBoxes(
-            gt_bboxes, box_dim=self.bbox_code_size, origin=(0.5, 1, 0.5))
-        gt_bboxes = xywhr2xyxyr(gt_bboxes.bev)
+        # gt_bboxes = bboxes.new_tensor(input_meta['gt_bboxes3d'])[:, [2, 1, 0, 5, 4, 3, 6, 7, 8]]
+        # gt_bboxes = CameraInstance3DBoxes(
+        #     gt_bboxes, box_dim=self.bbox_code_size, origin=(0.5, 1, 0.5))
+        # gt_bboxes = xywhr2xyxyr(gt_bboxes.bev)
         
-        draw_boxes([left_bboxes, gt_bboxes], "./bev/{}_{}.png".format(input_meta['timestamp'], direction))
+        # draw_boxes([left_bboxes, gt_bboxes], "./bev/{}_{}.png".format(input_meta['timestamp'], direction))
 
         bboxes = bboxes[:, [2, 1, 0, 5, 4, 3, 6, 7, 8]]
         attrs = attrs.to(labels.dtype)  # change data type to int

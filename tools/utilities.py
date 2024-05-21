@@ -2,6 +2,9 @@ import numpy as np
 import torch
 import cv2
 from copy import deepcopy
+
+shift = np.array([0, 0, 0])
+
 def init_random_seed(seed=None):
     if seed is None:
         seed = np.random.randint(2**32 - 1)
@@ -19,6 +22,46 @@ def extract_rotation_matrix(affine_matrix):
     rotation_matrix = rot_scale_matrix / np.linalg.norm(rot_scale_matrix, axis=0)
     
     return rotation_matrix
+
+def calculate_corners(bbox):
+    # Extracting components of the bounding box
+    bbox_copy = deepcopy(bbox)
+    bbox_copy[:, :2] *= 1.2
+
+    xyz, length, width, height, yaw =\
+         deepcopy(bbox_copy[:, 0:3]), bbox_copy[:, 3], bbox_copy[:, 4], bbox_copy[:, 5], bbox_copy[:, 6]
+    # xyz[:,:2] *= 1.2
+    # Define half dimensions for convenience
+    half_length = length / 2
+    half_width = width / 2
+    half_height = height / 2
+
+    # Define the corners of the bounding box in local coordinate system
+    corners_local = np.stack([
+        np.stack([-half_length, -half_width, -half_height], axis=0),
+        np.stack([-half_length, -half_width, half_height], axis=0),
+        np.stack([-half_length, half_width, half_height], axis=0),
+        np.stack([-half_length, half_width, -half_height], axis=0),
+        np.stack([half_length, -half_width, -half_height], axis=0),
+        np.stack([half_length, -half_width, half_height], axis=0),
+        np.stack([half_length, half_width, half_height], axis=0),
+        np.stack([half_length, half_width, -half_height], axis=0)
+    ], axis=0).transpose((2, 1, 0))
+
+    # Rotation matrix around the z-axis (yaw)
+    rotation_matrix = np.stack([
+        np.stack([np.cos(yaw),  -np.sin(yaw), np.zeros_like(yaw)],axis=0),
+        np.stack([np.sin(yaw), np.cos(yaw), np.zeros_like(yaw)], axis=0),
+        np.stack([np.zeros_like(yaw), np.zeros_like(yaw), np.ones_like(yaw)], axis=0),
+    ], axis=0).transpose((2, 0, 1))
+
+    # Apply rotation to each corner
+    rotated_corners = np.einsum("nik,nkj->nij", rotation_matrix, corners_local)
+
+    # Translate to the bounding box center
+    translated_corners = rotated_corners + xyz.reshape(-1, 3, 1) + shift.reshape(-1, 3, 1)
+    
+    return translated_corners.transpose(0, 2, 1)
 
 
 def calculate_corners_cam(bbox, world2cam_mat):

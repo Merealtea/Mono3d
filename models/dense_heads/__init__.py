@@ -8,9 +8,11 @@ from .centerpoint_head import CenterHead
 from .liga_atss_head import LIGAATSSHead
 from .atss_head import ATSSHead
 from .base_dense_head import BaseDenseHead
+from .pgd_head import PGDHead
 
 __all__ = [
     'Anchor3DHead', 'BaseConvBboxHead', 
     'BaseMono3DDenseHead', 'AnchorFreeMono3DHead', 'FCOSMono3DHead',
-    'CenterHead', 'LIGAATSSHead', 'ATSSHead', 'BaseDenseHead'
+    'CenterHead', 'LIGAATSSHead', 'ATSSHead', 'BaseDenseHead',
+    'PGDHead'
 ]

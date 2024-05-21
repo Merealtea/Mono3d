@@ -123,6 +123,7 @@ class AnchorTrainMixin(object):
         Returns:
             tuple[torch.Tensor]: Anchor targets.
         """
+
         if isinstance(self.bbox_assigner,
                       list) and (not isinstance(anchors, list)):
             feat_size = anchors.size(0) * anchors.size(1) * anchors.size(2)
@@ -267,6 +268,7 @@ class AnchorTrainMixin(object):
         dir_weights = anchors.new_zeros((anchors.shape[0]), dtype=torch.float)
         labels = anchors.new_zeros(num_valid_anchors, dtype=torch.long)
         label_weights = anchors.new_zeros(num_valid_anchors, dtype=torch.float)
+        
         if len(gt_bboxes) > 0:
             if not isinstance(gt_bboxes, torch.Tensor):
                 gt_bboxes = gt_bboxes.tensor.to(anchors.device)
@@ -276,6 +278,7 @@ class AnchorTrainMixin(object):
                                                        gt_bboxes)
             pos_inds = sampling_result.pos_inds
             neg_inds = sampling_result.neg_inds
+            
         else:
             pos_inds = torch.nonzero(
                 anchors.new_zeros((anchors.shape[0], ), dtype=torch.bool) > 0,
@@ -305,10 +308,10 @@ class AnchorTrainMixin(object):
             else:
                 labels[pos_inds] = gt_labels[
                     sampling_result.pos_assigned_gt_inds]
-            if self.train_cfg.pos_weight <= 0:
+            if self.train_cfg['pos_weight'] <= 0:
                 label_weights[pos_inds] = 1.0
             else:
-                label_weights[pos_inds] = self.train_cfg.pos_weight
+                label_weights[pos_inds] = self.train_cfg["pos_weight"]
 
         if len(neg_inds) > 0:
             label_weights[neg_inds] = 1.0

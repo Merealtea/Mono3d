@@ -45,6 +45,7 @@ class Anchor3DRangeGenerator(object):
                  reshape_out=True,
                  size_per_range=True):
         assert mmcv.is_list_of(ranges, list)
+
         if size_per_range:
             if len(sizes) != len(ranges):
                 assert len(ranges) == 1
@@ -130,6 +131,7 @@ class Anchor3DRangeGenerator(object):
         # torch: 0.6975 s for 1000 times
         # numpy: 4.3345 s for 1000 times
         # which is ~5 times faster than the numpy implementation
+        
         if not self.size_per_range:
             return self.anchors_single_range(
                 featmap_size,
@@ -138,7 +140,6 @@ class Anchor3DRangeGenerator(object):
                 self.sizes,
                 self.rotations,
                 device=device)
-
         mr_anchors = []
         for anchor_range, anchor_size in zip(self.ranges, self.sizes):
             mr_anchors.append(
@@ -284,6 +285,7 @@ class AlignedAnchor3DRangeGenerator(Anchor3DRangeGenerator):
         if len(feature_size) == 2:
             feature_size = [1, feature_size[0], feature_size[1]]
         anchor_range = torch.tensor(anchor_range, device=device)
+
         z_centers = torch.linspace(
             anchor_range[2],
             anchor_range[5],

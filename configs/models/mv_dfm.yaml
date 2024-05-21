@@ -1,4 +1,4 @@
-type : 'MultiViewDfM'
+type : 'MultiViewDfMFisheye'
 backbone : 
     type : 'ResNet'
     depth : 101
@@ -28,19 +28,26 @@ bbox_head_2d :
 backbone_stereo : 
 depth_head : 
 backbone_3d : 
+# neck_3d :
+#   type : 'OutdoorImVoxelNeck'
+#   in_channels : 64
+#   out_channels : 256
+
 neck_3d : 
-  type : 'OutdoorImVoxelNeck'
-  in_channels : 64
-  out_channels : 256
+    type : 'DfMNeck'
+    in_channels : 64
+    out_channels : 256
+    num_frames : 1  # num_frames = num_ref_frames+1
 valid_sample : True
-voxel_size : [0.5, 0.5, 0.5]  # n_voxels : [240, 300, 12]
+temporal_aggregate : 'concat'
+voxel_size : [0.25, 0.25, 0.25]  # n_voxels : [240, 300, 12]
 anchor_generator : 
     type : 'AlignedAnchor3DRangeGenerator'
-    ranges : &range [[-10.0, -10.0, -2, 10.0, 10.0, 1]]
+    ranges : &range [[-10.0, -10.0, -3, 10.0, 10.0, 0]]
     rotations : [.0]
 bbox_head_3d : 
     type : 'Anchor3DHead'
-    num_classes : 3
+    num_classes : 1
     in_channels : 256
     feat_channels : 256
     use_direction_classifier : True
@@ -48,9 +55,7 @@ bbox_head_3d :
         type : 'AlignedAnchor3DRangeGenerator'
         ranges : *range
         sizes : [
-            [0.91, 0.84, 1.74],  # pedestrian
-            [1.81, 0.84, 1.77],  # cyclist
-            [4.73, 2.08, 1.77],  # car
+            [0.5, 0.5, 1.74],  # pedestrian
         ]
         rotations : [0, 1.57]
         reshape_out : False

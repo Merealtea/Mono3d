@@ -76,6 +76,7 @@ class CustomMV3DDataset(BaseDataset):
                      'image_0', 'image_1', 'image_2', 'image_3', 'image_4'
                  ],
                  max_sweeps=0,
+                 num_ref_frames=0,
                  **kwargs):
         super().__init__(data_root, img_prefix, ann_prefix, test_mode, classes)
         self.load_interval = load_interval
@@ -86,9 +87,9 @@ class CustomMV3DDataset(BaseDataset):
         self.cat_ids = range(len(self.CLASSES))
         self.cat2label = {cat_id: i for i, cat_id in enumerate(self.cat_ids)}
         self.bbox_code_size = 7
-        self.multiview_indices = multiview_indices
+        self.multiview_indices = tuple(multiview_indices)
         self.max_sweeps = max_sweeps # The max history frame concerned in the model
-        # Remove this part 
+        self.num_ref_frames = num_ref_frames
 
         # load training/test data info
         if not self.test_mode:
@@ -127,6 +128,8 @@ class CustomMV3DDataset(BaseDataset):
             img = np.stack(result['img'], axis=0)
             img_shape = result["pad_shape"][0]
             imgs.append(img.transpose(0, 3, 1, 2).reshape(len(self.multiview_indices), 3, img_shape[0], img_shape[1]))
+            
+            assert len(result['gt_bboxes_3d']) == len(result['gt_labels_3d'])
             gt_bboxes_3d.append(torch.FloatTensor(result['gt_bboxes_3d']))
             gt_labels_3d.append(torch.LongTensor(result['gt_labels_3d']))
             timestamps.append(result['timestamp'])
@@ -139,12 +142,12 @@ class CustomMV3DDataset(BaseDataset):
         batch_results["img_metas"] = []
         for res in results:
             img_meta = {}
-        
             for key in res:
                 if key not in batch_results:
                     img_meta[key] = res[key]
+            img_meta['num_ref_frames'] = self.num_ref_frames
+            img_meta['cam_dir'] = self.multiview_indices
             img_meta["timestamp"] = res["timestamp"]
-            img_meta['gt_bboxes3d'] = res['gt_bboxes_3d']
             batch_results["img_metas"].append(img_meta)
         return batch_results
 
