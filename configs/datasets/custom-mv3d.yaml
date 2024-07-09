@@ -11,6 +11,8 @@ img_norm_cfg : &img_norm_cfg
     to_rgb : True
 img_scale : &img_scale [540, 960]
 
+load_mode : lidar_frame
+num_camera : 4
 
 # Explore RandomFlip3D Aug
 train_pipeline : &train_pipeline
@@ -34,6 +36,7 @@ train_pipeline : &train_pipeline
     #   direction : 'horizontal'
     # -
       type : 'LoadAnnotations3D'
+      with_label : True
       with_bbox_3d : True
       with_label_3d : True
       with_attr_label : False
@@ -50,6 +53,12 @@ test_pipeline : &test_pipeline
         type : 'LoadMultiViewImageFromFiles'
         to_float32 : True
       -
+        type : 'LoadAnnotations3D'
+        with_bbox_3d : True
+        with_label_3d : True
+        with_attr_label : False
+        with_vel : False
+      -
         type : 'MultiViewImageResize3D'
         img_scale : *img_scale
         keep_ratio : True
@@ -60,6 +69,8 @@ test_pipeline : &test_pipeline
       -
         type : 'MultiViewImagePad'
         size_divisor : 16
+
+        
 
 data : 
   samples_per_gpu : 2

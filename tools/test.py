@@ -1,8 +1,5 @@
 import argparse
-import copy
 import os
-import time
-import warnings
 from os import path 
 import sys
 sys.path.append('/data/cxy/Mono3d')
@@ -15,25 +12,16 @@ from builder.build_dataset import build_dataset
 from builder.build_model import build_detector
 from datetime import datetime
 import pickle
-
-import tensorboardX
-from utils import init_random_seed
-
-def to_device(data, device):
-    if isinstance(data, torch.Tensor):
-        return data.to(device)
-    if isinstance(data, dict):
-        for key in data:
-            data[key] = to_device(data[key], device)
-        return data
-    if isinstance(data, list):
-        return [to_device(d, device) for d in data]
-    return data
+from configs.FisheyeParam import CamModel
+from utilities import init_random_seed, detection_visualization,\
+      to_device, turn_gt_to_annos
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a detector')
-    parser.add_argument('config', help='train config file path')
+    parser.add_argument('--last_ckpt', help='train config file path')
+    parser.add_argument('--val_data_path', help='val data path')
+    parser.add_argument('--vehicle', help='vehicle type', default=None)
     args = parser.parse_args()
     return args
 
@@ -46,160 +34,107 @@ def create_folder(folder):
 
 def main():
     args = parse_args()
-    with open(args.config) as f:
-        cfg = yaml.load(f, Loader=yaml.FullLoader)
+
+    ckpt_path = args.last_ckpt
+    cfg = yaml.safe_load(open(os.path.join(ckpt_path, 'config', 'train_config.yaml')))
+    vehicle = cfg["vehicle"] if args.vehicle is None else args.vehicle
+    # set random seeds
+    seed = init_random_seed(cfg['seed'])
+    cam_models = dict(zip(["left", "right", "front", "back"], [CamModel(direction, vehicle) for direction in ["left", "right", "front", "back"]]))
+    # load dataset
+    with open(os.path.join(ckpt_path, 'config', 'dataset_config.yaml')) as f:
+        dataset_cfg = yaml.safe_load(f)
+
+    # load model
+    with open(os.path.join(ckpt_path, 'config', 'model_config.yaml')) as f:
+        model_cfg = yaml.safe_load(f)
+
+    max_epoch = 0
+    for file in os.listdir(ckpt_path):
+        if file.endswith(".pth"):
+            epoch = int(file.split('_')[-1].split('.')[0])
+            if epoch > max_epoch:
+                max_epoch = epoch
+                ckpt_file = os.path.join(ckpt_path, file)
 
     # Create save folder to save the ckpt
-    save_path = cfg['save_path']
-    save_path = os.path.join(save_path, datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
+    data_datetime = args.val_data_path.split('/')[-1]
+    save_path = os.path.join(cfg['save_path'], 'val_{}'.format(data_datetime))
     create_folder(save_path)
-
-    tensorboard_path = os.path.join(save_path, 'tensorboard')
-    create_folder(tensorboard_path)
-
-    config_save_path = os.path.join(save_path, 'config')
-    create_folder(config_save_path)
-
-    # save config file
-    with open(os.path.join(config_save_path, 'train_config.yaml'), 'w') as f:
-        yaml.dump(cfg, f)
-
-    # create tensorboard writer
-    writer = tensorboardX.SummaryWriter(tensorboard_path)
 
     # load dataset
     with open(cfg['dataset_config']) as f:
         dataset_cfg = yaml.load(f, Loader=yaml.FullLoader)
-    dataset = build_dataset(dataset_cfg, 
-            data_root=cfg["data_root"],
-            annotation_prefix=cfg["annotation_prefix"],
-            image_prefix=cfg["image_prefix"], 
-            eval=False       
-    )
 
-    val_dataset = build_dataset(dataset_cfg,
-            data_root=cfg["data_root"],
-            annotation_prefix=cfg["annotation_prefix"],
-            image_prefix=cfg["image_prefix"],
-            eval=True
-    )
+    dataset_cfg["data_root"] = args.val_data_path
+    dataset_cfg["ann_prefix"] = cfg["annotation_prefix"]
+    dataset_cfg["img_prefix"] = cfg["image_prefix"]   
+    dataset_cfg['test_mode'] = True
+    dataset_cfg["vehicle"] = cfg["vehicle"]
+    val_dataset = build_dataset(dataset_cfg)
 
-    # save dataset config
-    with open(os.path.join(config_save_path, 'dataset_config.yaml'), 'w') as f:
-        yaml.dump(dataset_cfg, f)
+    # set_device
+    device = torch.device(f"cuda:{cfg['gpu_id']}") if torch.cuda.is_available() else torch.device('cpu')
     
     # load model
     with open(cfg['model_config']) as f:
         model_cfg = yaml.load(f, Loader=yaml.FullLoader)
+    
+    model_cfg["vehicle"] = cfg["vehicle"]
     model = build_detector(model_cfg)
+    model.load_state_dict(torch.load(ckpt_file))
+    model.to(device)
+    model.eval()
 
-    # save model config 
-    with open(os.path.join(config_save_path, 'model_config.yaml'), 'w') as f:
-        yaml.dump(model_cfg, f)
-
-    # setup optimizer and hyper parameters
-    optimizer = torch.optim.Adam(model.parameters(), 
-                                lr=cfg["optimizer"]['lr'])
-    total_epochs = cfg['epoches']
-    batch_size = cfg['batch_size']
-    eval_interval = cfg['eval_interval']
-    # set_device
-    device = torch.device(f"cuda:{cfg['gpu_id']}") if torch.cuda.is_available() else torch.device('cpu')
-    
-    # create dataloader
-    train_loader = torch.utils.data.DataLoader(dataset, 
-                                batch_size=batch_size,
-                                shuffle=True,
-                                num_workers=4,
-                                pin_memory=True,
-                                collate_fn=dataset.collate)
-    
     val_loader = torch.utils.data.DataLoader(val_dataset,
-                                batch_size=batch_size,
+                                batch_size=1,
                                 shuffle=False,
                                 num_workers=4,
                                 pin_memory=True,
                                 collate_fn=val_dataset.collate)
 
-    # set random seeds
-    seed = init_random_seed(cfg['seed'])
 
-    model.init_weights()
-    model = model.to(device)
-    model.eval()
-
-    # train model
     with torch.no_grad():
-        for epoch in range(total_epochs):
-            for i, data in tqdm(enumerate(train_loader)):
-                optimizer.zero_grad()
-                to_device(data, device)
-                bbox_res = model(data['img'], data['img_metas'], return_loss = False)
 
-                loss = loss_res['loss_cls'] * 0 +\
-                        loss_res['loss_depth'] + \
-                        loss_res['loss_size'] + \
-                        loss_res['loss_rotsin'] + \
-                        loss_res['loss_offset'] + \
-                        loss_res['loss_centerness'] 
-                
-                # record loss
-                writer.add_scalar('train loss', loss.item(), epoch * len(train_loader) + i)
-                # record loss details
-                writer.add_scalar('train loss depth', loss_res['loss_depth'].item(), epoch * len(train_loader) + i)
-                writer.add_scalar('train loss size', loss_res['loss_size'].item(), epoch * len(train_loader) + i)
-                writer.add_scalar('train loss rotsin', loss_res['loss_rotsin'].item(), epoch * len(train_loader) + i)
-                writer.add_scalar('train loss offset', loss_res['loss_offset'].item(), epoch * len(train_loader) + i)
-                writer.add_scalar('train loss centerness', loss_res['loss_centerness'].item(), epoch * len(train_loader) + i)
+        # eval model
+        bbox_res_path = os.path.join(save_path, f"{epoch}", "val_bbox_pre")
+        create_folder(bbox_res_path)
 
-                loss.backward()
-                optimizer.step()
-            
+        for direction in ["left", "right", "front", "back"]:
+            create_folder(os.path.join(bbox_res_path, direction))
 
-        if epoch % eval_interval == 0:
-            model.eval()
-            # eval model
-            bbox_res_path = os.path.join(save_path, f"{epoch}", "val_bbox_pre")
-            create_folder(bbox_res_path)
+        detection_res = []
+        ground_truth = []
 
-            for i, data in tqdm(enumerate(val_loader)):
-                to_device(data, device)
-                loss_res = model(data['img'], data['img_metas'], return_loss = True,
-                        gt_bboxes = data['gt_bboxes'],
-                        gt_labels = data['gt_labels'],
-                        gt_bboxes_3d = data['gt_bboxes_3d'],
-                        gt_labels_3d = data['gt_labels_3d'],
-                        centers2d = data['centers2d'],
-                        depths = data['depths']
-                        )
+        for i, data in tqdm(enumerate(val_loader)):
+            to_device(data, device)
+            bbox_res = model(return_loss=False, rescale=True ,**data)
+            detection_res += bbox_res
+            del data['img'] 
+            ground_truth.append(data)
 
-                bbox_res = model([data['img']], [data['img_metas']], return_loss = False)
-                # save bbox_res
-                for bbox, img_meta in zip(bbox_res, data['img_metas']):
-                    # extract bbox from bbox_res
-                    with open(os.path.join(bbox_res_path, f"{img_meta['timestamp']}.pkl"), 'wb') as f:
-                        pickle.dump(bbox, f)
-                
-                loss = loss_res['loss_cls'] * 0 +\
-                        loss_res['loss_depth'] + \
-                        loss_res['loss_size'] + \
-                        loss_res['loss_rotsin'] + \
-                        loss_res['loss_offset'] + \
-                        loss_res['loss_centerness'] 
-                
-                # record loss
-                writer.add_scalar('val loss', loss, epoch * len(val_loader) + i)
-                # record loss details
-                writer.add_scalar('val loss depth', loss_res['loss_depth'], epoch * len(val_loader) + i)
-                writer.add_scalar('val loss size', loss_res['loss_size'], epoch * len(val_loader) + i)
-                writer.add_scalar('val loss rotsin', loss_res['loss_rotsin'], epoch * len(val_loader) + i)
-                writer.add_scalar('val loss offset', loss_res['loss_offset'], epoch * len(val_loader) + i)
-                writer.add_scalar('val loss centerness', loss_res['loss_centerness'], epoch * len(val_loader) + i)
-            model.train()
+            # save bbox_res
+            for idx ,(bbox, img_meta) in enumerate(zip(bbox_res, data['img_metas'])):
+                # extract bbox from bbox_res
+                if 'img_bbox' in bbox:
+                    bbox = bbox['img_bbox']['boxes_3d'].tensor.cpu().numpy()[:, :7]
+                else:
+                    bbox = bbox['boxes_3d'].tensor.cpu().numpy()[:, :7]
+                gt_bbox = data['gt_bboxes_3d'][idx].cpu().numpy()[:, :7]
+                if cfg['bbox_coordination'] == "CAM":
+                    cam_model = cam_models[img_meta["direction"]]
+                    bbox_res_dir_path = os.path.join(bbox_res_path, img_meta["direction"])
+                    filename = img_meta['filename']
+                    detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_dir_path, bboxes_coor = "CAM")
+                elif cfg['bbox_coordination'] == "Lidar":
+                    for filename, direction in zip(img_meta['img_filename'], img_meta['direction']):
+                        cam_model = cam_models[direction]
+                        bbox_res_dir_path = os.path.join(bbox_res_path, direction)
+                        detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_dir_path, bboxes_coor = "Lidar")
 
-        # save model
-        if epoch % cfg['save_interval'] == 0:
-            torch.save(model.state_dict(), f"{save_path}/epoch_{epoch}.pth")
+        # Evaluate the result with prediction and ground truth  
+        ground_truth = turn_gt_to_annos(ground_truth, val_dataset.CLASSES)
+        val_dataset.evaluate(detection_res, ground_truth, metric='kitti')
 
 if __name__ == '__main__':
     main()

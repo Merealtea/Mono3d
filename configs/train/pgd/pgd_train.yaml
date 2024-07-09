@@ -1,11 +1,13 @@
 model_config : /data/cxy/Mono3d/configs/models/pgd.yaml
-dataset_config : /data/cxy/Mono3d/configs/datasets/custom-mono3d.yaml
-data_root : /data/cxy/Mono3d/data/2024-04-27-19-07-09
+dataset_config : /data/cxy/Mono3d/configs/datasets/custom-pgd.yaml
+data_root : /data/cxy/Mono3d/data/2024-05-12-12-58-18
 save_path : ./ckpt/
 annotation_prefix : annotations
 image_prefix : images
 gpu_id : 0
 seed : 2025
+
+bbox_coordination : "CAM"
 
 optimizer : 
     lr : 0.002
@@ -17,8 +19,8 @@ optimizer :
         norm_type : 2
 
 epoches : 50
-
-batch_size : 16
+save_backbone : False
+batch_size : 15
 
 eval_interval : 5
 save_interval : 5

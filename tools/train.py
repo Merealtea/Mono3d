@@ -1,8 +1,5 @@
 import argparse
-import copy
 import os
-import time
-import warnings
 from os import path 
 import sys
 sys.path.append('/data/cxy/Mono3d')
@@ -21,18 +18,8 @@ import pickle
 from configs.FisheyeParam import CamModel
 
 import tensorboardX
-from utilities import init_random_seed, calculate_corners_cam, plot_rect3d_on_img
+from utilities import init_random_seed, detection_visualization, to_device
 
-def to_device(data, device):
-    if isinstance(data, torch.Tensor):
-        return data.to(device)
-    if isinstance(data, dict):
-        for key in data:
-            data[key] = to_device(data[key], device)
-        return data
-    if isinstance(data, list):
-        return [to_device(d, device) for d in data]
-    return data
 
 def clip_grads(params, grad_clip):
     params = list(filter(lambda p: p.requires_grad and p.grad is not None, params))
@@ -65,9 +52,6 @@ def create_lr_scheduler(optimizer,
         # （1-a/b）^0.9 b是当前这个epoch结束训练总共了多少次了（除去warmup），这个关系是指一个epcoch中
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=f)
 
-def detection_visualization(detection_result, img_meta, cam_model):
-    pass
-
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a detector')
@@ -84,16 +68,16 @@ def create_folder(folder):
         print(f"Folder {folder} already exists. Skip creation.")
 
 def main():
-    cam_models = dict(zip(["left", "right", "front", "back"], [CamModel(direction) for direction in ["left", "right", "front", "back"]]))
 
     args = parse_args()
     ckpt_file = None
     start_epoch = 0
+    vehicle = None
     if args.last_ckpt is not None:
         save_path = args.last_ckpt
         cfg = yaml.safe_load(open(os.path.join(save_path, 'config', 'train_config.yaml')))
         tensorboard_path = os.path.join(save_path, 'tensorboard')
-
+        vehicle = cfg["vehicle"]
         # load dataset
         with open(os.path.join(save_path, 'config', 'dataset_config.yaml')) as f:
             dataset_cfg = yaml.safe_load(f)
@@ -111,7 +95,7 @@ def main():
     else:
         with open(args.config) as f:
             cfg = yaml.safe_load(f)
-
+            vehicle = cfg["vehicle"]
         # Create save folder to save the ckpt
         save_path = cfg['save_path']
         save_path = os.path.join(save_path, datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
@@ -143,20 +127,22 @@ def main():
         with open(os.path.join(config_save_path, 'model_config.yaml'), 'w') as f:
             yaml.safe_dump(model_cfg, f)
 
+    cam_models = dict(zip(["left", "right", "front", "back"], [CamModel(direction, vehicle) for direction in ["left", "right", "front", "back"]]))
     # create tensorboard writer
     writer = tensorboardX.SummaryWriter(tensorboard_path)
 
     dataset_cfg["data_root"] = cfg["data_root"]
     dataset_cfg["ann_prefix"] = cfg["annotation_prefix"]
     dataset_cfg["img_prefix"] = cfg["image_prefix"]   
-    dataset_cfg['eval'] = False
+    dataset_cfg['test_mode'] = False
+    dataset_cfg["vehicle"] = vehicle
     dataset = build_dataset(dataset_cfg)
 
-    dataset_cfg['eval'] = True
+    dataset_cfg['test_mode'] = True
     val_dataset = build_dataset(dataset_cfg)
 
     val_loss = 1000
-
+    model_cfg["vehicle"] = cfg["vehicle"]
     model = build_detector(model_cfg)
     total_epochs = cfg['epoches']
     batch_size = cfg['batch_size']
@@ -181,16 +167,19 @@ def main():
 
     # set random seeds
     seed = init_random_seed(cfg['seed'])
+    print(f"Set random seed to {seed}")
 
     if ckpt_file is not None:
         model.load_state_dict(torch.load(ckpt_file))
     else:
         model.init_weights()
-    model = model.to(device)
+
+    model.to(device)
     model.train()
 
-    for name, param in model.backbone.named_parameters():
-        param.requires_grad = False
+    if cfg["freeze_backbone"]:
+        for name, param in model.backbone.named_parameters():
+            param.requires_grad = False
     
     # setup optimizer and hyper parameters
     if 'type' in cfg['optimizer']:
@@ -212,19 +201,19 @@ def main():
             to_device(data, device)
             data['img_metas'][0]['epoch'] = epoch
             data["return_loss"] = True
+
             loss_res = model(**data)
-            loss = sum([loss_res[key][0] for key in loss_res])
-            
+
+            loss = sum([loss_res[key][0] if isinstance(loss_res[key], list) else loss_res[key] for key in loss_res])
+            print("Epoch: ", epoch, "Iter: ", i, "Loss: ", loss.item())
+
             # record loss
             writer.add_scalar('train loss', loss.item(), epoch * len(train_loader) + i)
             for key in loss_res:
-                writer.add_scalar(f'train loss {key}', loss_res[key][0].item(), epoch * len(train_loader) + i)
+                loss_single = loss_res[key][0] if isinstance(loss_res[key], list) else loss_res[key]
+                writer.add_scalar(f'train {key}', loss_single.item(), epoch * len(train_loader) + i)
+                print(f"   Loss {key}: {loss_single.item()}")   
 
-            # print loss
-            print("Epoch: ", epoch, "Iter: ", i, "Loss: ", loss.item())
-            for key in loss_res:
-                print(f"   Loss {key}: {loss_res[key][0].item()}")        
-            
             loss.backward()
             if grad_clip_cfg is not None:
                 clip_grads(model.parameters(), grad_clip_cfg)
@@ -239,19 +228,25 @@ def main():
                 val_epoch = epoch // eval_interval
                 for i, data in tqdm(enumerate(val_loader)):
                     to_device(data, device)
-                    data["return_loss"] = False
+                    data["return_loss"] = True
                     data['img_metas'][0]['test'] = 1
+                
                     loss_res = model(**data)
-                    loss = sum([loss_res[key][0] for key in loss_res])
+                    loss = sum([loss_res[key][0] if isinstance(loss_res[key], list) else loss_res[key] for key in loss_res])
 
                     # record loss
                     writer.add_scalar('val loss', loss.item(), val_epoch * len(val_loader) + i)
                     for key in loss_res:
-                        writer.add_scalar(f'val loss {key}', loss_res[key][0].item(), val_epoch * len(val_loader) + i)
+                        loss_single = loss_res[key][0] if isinstance(loss_res[key], list) else loss_res[key]
+                        writer.add_scalar(f'val {key}', loss_single.item(), val_epoch * len(val_loader) + i)
                     
                 if epoch % 10 == 0:
                     torch.save(model.state_dict(), f"{save_path}/epoch_{epoch}.pth")
                     print(f"Save best model at epoch {epoch}")
+
+                    if cfg["save_backbone"]:
+                        torch.save(model.backbone.state_dict(), f"{save_path}/epoch_{epoch}_backbone.pth")
+                        print(f"Save backbone at epoch {epoch}")
 
             if epoch >= 0: # total_epochs -11:
                 bbox_res_path = os.path.join(save_path, f"{epoch}", "val_bbox_pre")
@@ -262,62 +257,50 @@ def main():
                 with torch.no_grad():
                     for i, data in tqdm(enumerate(train_loader)):
                         to_device(data, device)
-                        bbox_res = model([data['img']], [data['img_metas']], return_loss = False)
+                        data["return_loss"] = False
+                        bbox_res = model(**data)
                         # save bbox_res
                         for idx, (bbox, img_meta) in enumerate(zip(bbox_res, data['img_metas'])):
                             # extract bbox from bbox_res
-                            bbox = bbox['img_bbox']['boxes_3d'].tensor.cpu().numpy()[:, :7]
+                            img_meta = img_meta['img_info']
+                            if 'img_bbox' in bbox:
+                                bbox = bbox['img_bbox']['boxes_3d'].tensor.cpu().numpy()[:, :7]
+                            else:
+                                bbox = bbox['boxes_3d'].tensor.cpu().numpy()[:, :7]
                             gt_bbox = data['gt_bboxes_3d'][idx].cpu().numpy()[:, :7]
-                            direction = img_meta["direction"]
-                            world2cam_mat = cam_models[direction].world2cam_mat
-                            corners = calculate_corners_cam(bbox, world2cam_mat).reshape(-1, 8, 3)
-                            gt_corners = calculate_corners_cam(gt_bbox, world2cam_mat).reshape(-1, 8, 3)
-                            bboxes = []
-                            for corner in corners:
-                                pixel_uv = cam_models[direction].cam2image(corner.T).T
-                                if pixel_uv.shape[0] == 8:
-                                    bboxes.append(pixel_uv)
-                            
-                            img = cv2.imread(img_meta['filename'])
-                            img = plot_rect3d_on_img(img, len(bboxes), bboxes, color=(0, 0, 255))
 
-                            gt_bboxes = []
-                            for corner in gt_corners:
-                                pixel_uv = cam_models[direction].cam2image(corner.T).T
-                                if pixel_uv.shape[0] == 8:
-                                    gt_bboxes.append(pixel_uv)
-                        
-                            img = plot_rect3d_on_img(img, len(gt_bboxes), gt_bboxes, color=(0, 255, 0))
-                            cv2.imwrite(os.path.join(bbox_train_res_path, f"{img_meta['timestamp']}.jpg"), img)
-                    
+                            if cfg['bbox_coordination'] == "CAM":
+                                cam_model = cam_models[img_meta["direction"]]
+                                filename = img_meta['filename']
+                                detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_train_res_path, bboxes_coor = "CAM")
+                            elif cfg['bbox_coordination'] == "Lidar":
+                                for filename, direction in zip(img_meta['img_filename'], img_meta['direction']):
+                                    cam_model = cam_models[direction]
+                                    detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_train_res_path, bboxes_coor = "Lidar")
+                                    
                 with torch.no_grad():
                     val_epoch = epoch // eval_interval
                     for i, data in tqdm(enumerate(val_loader)):
                         to_device(data, device)
-                        bbox_res = model([data['img']], [data['img_metas']], return_loss = False)
+                        data["return_loss"] = False
+                        bbox_res = model(**data)
                         # save bbox_res
                         for idx ,(bbox, img_meta) in enumerate(zip(bbox_res, data['img_metas'])):
                             # extract bbox from bbox_res
-                            bbox = bbox['img_bbox']['boxes_3d'].tensor.cpu().numpy()[:, :7]
+                            img_meta = img_meta['img_info']
+                            if 'img_bbox' in bbox:
+                                bbox = bbox['img_bbox']['boxes_3d'].tensor.cpu().numpy()[:, :7]
+                            else:
+                                bbox = bbox['boxes_3d'].tensor.cpu().numpy()[:, :7]
                             gt_bbox = data['gt_bboxes_3d'][idx].cpu().numpy()[:, :7]
-                            bboxes = []
-                            direction = img_meta["direction"]
-                            world2cam_mat = cam_models[direction].world2cam_mat
-                            corners = calculate_corners_cam(bbox, world2cam_mat).reshape(-1, 8, 3)
-                            gt_corners = calculate_corners_cam(gt_bbox, world2cam_mat).reshape(-1, 8, 3)
-                            for corner in corners:
-                                pixel_uv = cam_models[direction].cam2image(corner.T).T
-                                if pixel_uv.shape[0] == 8:
-                                    bboxes.append(pixel_uv)
-                            gt_bboxes = []
-                            for corner in gt_corners:
-                                pixel_uv = cam_models[direction].cam2image(corner.T).T
-                                if pixel_uv.shape[0] == 8:
-                                    gt_bboxes.append(pixel_uv)
-                            img = cv2.imread(img_meta['filename'])
-                            img = plot_rect3d_on_img(img, len(gt_bboxes), gt_bboxes, color=(0, 255, 0))
-                            img = plot_rect3d_on_img(img, len(bboxes), bboxes, color=(0, 0, 255))
-                            cv2.imwrite(os.path.join(bbox_res_path, f"{img_meta['timestamp']}.jpg"), img)   
+                            if cfg['bbox_coordination'] == "CAM":
+                                cam_model = cam_models[img_meta["direction"]]
+                                filename = img_meta['filename']
+                                detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_path, bboxes_coor = "CAM")
+                            elif cfg['bbox_coordination'] == "Lidar":
+                                for filename, direction in zip(img_meta['img_filename'], img_meta['direction']):
+                                    cam_model = cam_models[direction]
+                                    detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_path, bboxes_coor = "Lidar")
             model.train()
 
 

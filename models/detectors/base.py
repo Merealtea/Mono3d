@@ -119,6 +119,10 @@ class BaseDetector(BaseModule, metaclass=ABCMeta):
                 augs (multiscale, flip, etc.) and the inner list indicates
                 images in a batch.
         """
+        if not isinstance(imgs, list):
+            imgs = [imgs]
+            img_metas = [img_metas]
+
         for var, name in [(imgs, 'imgs'), (img_metas, 'img_metas')]:
             if not isinstance(var, list):
                 raise TypeError(f'{name} must be a list, but got {type(var)}')

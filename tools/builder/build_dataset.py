@@ -7,12 +7,13 @@ datasets = {
 
 
 def build_dataset(cfg):
-    if not cfg['eval']:
+    if not cfg['test_mode']:
        pipeline = cfg["train_pipeline"]
     else:
        pipeline = cfg["test_pipeline"]
 
     cfg['pipeline'] = pipeline
+
     if cfg['dataset_type'] in datasets:
         dataset = datasets[cfg['dataset_type']](**cfg)
     else:

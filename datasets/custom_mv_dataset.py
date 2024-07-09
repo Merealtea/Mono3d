@@ -2,7 +2,6 @@
 import copy
 import os
 import tempfile
-from os import path as osp
 from .basedataset import BaseDataset
 from datasets.pipelines import Compose
 import mmcv
@@ -10,12 +9,9 @@ import cv2
 import numpy as np
 import torch
 from mmcv.utils import print_log
-
 from core import bbox3d2result, box3d_multiclass_nms, xywhr2xyxyr
 from core.bbox import (Box3DMode, CameraInstance3DBoxes,
-                         LiDARInstance3DBoxes, points_cam2img)
-
-
+                         LiDARInstance3DBoxes, points_cam2img, get_box_type)
 
 class CustomMV3DDataset(BaseDataset):
     """Waymo Dataset.
@@ -61,7 +57,7 @@ class CustomMV3DDataset(BaseDataset):
             on perspective views. Defaults to 'lidar_frame'.
     """
 
-    CLASSES = ('Car', 'Cyclist', 'Pedestrian')
+    CLASSES = ('Pedestrian', )
 
     def __init__(self,
                  data_root,
@@ -76,9 +72,13 @@ class CustomMV3DDataset(BaseDataset):
                      'image_0', 'image_1', 'image_2', 'image_3', 'image_4'
                  ],
                  max_sweeps=0,
+                 load_mode='lidar_frame',
+                 num_camera = 4,
+                 box_type_3d = "Lidar",
                  num_ref_frames=0,
+                 vehicle = None,
                  **kwargs):
-        super().__init__(data_root, img_prefix, ann_prefix, test_mode, classes)
+        super().__init__(data_root, img_prefix, ann_prefix, test_mode, classes, load_mode, num_camera, vehicle)
         self.load_interval = load_interval
         # set loading mode for different task settings
         
@@ -90,6 +90,7 @@ class CustomMV3DDataset(BaseDataset):
         self.multiview_indices = tuple(multiview_indices)
         self.max_sweeps = max_sweeps # The max history frame concerned in the model
         self.num_ref_frames = num_ref_frames
+        self.box_type_3d = box_type_3d
 
         # load training/test data info
         if not self.test_mode:
@@ -101,21 +102,22 @@ class CustomMV3DDataset(BaseDataset):
 
     def load_infos(self, info_path):
         with open(info_path, 'r') as f:
-            for timestamp in f.readlines():
+            for image_idx, timestamp in enumerate(f.readlines()):
                 timestamp = timestamp.strip()
                 img_path = os.path.join(self.data_root, self.img_prefix)
-                image_info = [os.path.join(img_path, cam_dir, f"{timestamp}.jpg") for cam_dir in self.multiview_indices] 
+                image_info = {
+                    "img_filename" : [os.path.join(img_path, cam_dir, f"{timestamp}.jpg") for cam_dir in self.multiview_indices],
+                    "image_idx" : image_idx,
+                    "image_shape" : (1920, 1280, 3),
+                    "timestamp" : timestamp,
+                    "direction" : self.multiview_indices
+                } 
                 
                 ann_path = os.path.join(self.data_root, self.ann_prefix, "lidar", timestamp + '.pkl')
                 ann_info = {"filename" : ann_path}
-                self.data_infos.append([image_info, ann_info, timestamp])
+                self.data_infos.append({"image" : image_info, 
+                                        "annotation" : ann_info})
 
-    def get_single_item(self, idx):
-        img_info, ann_info, timestamp = self.data_infos[idx]
-
-        results = dict(img_filename=img_info, ann_info=ann_info, bbox_fields = [], timestamp = timestamp)
-        return self.pipeline(results)
-    
     def collate(self, results):
         batch_results = {}
 
@@ -123,6 +125,7 @@ class CustomMV3DDataset(BaseDataset):
         gt_bboxes_3d = []
         gt_labels_3d = []
         timestamps = []
+        gt_labels = []
 
         for result in results:
             img = np.stack(result['img'], axis=0)
@@ -132,9 +135,11 @@ class CustomMV3DDataset(BaseDataset):
             assert len(result['gt_bboxes_3d']) == len(result['gt_labels_3d'])
             gt_bboxes_3d.append(torch.FloatTensor(result['gt_bboxes_3d']))
             gt_labels_3d.append(torch.LongTensor(result['gt_labels_3d']))
-            timestamps.append(result['timestamp'])
+            gt_labels.append(torch.LongTensor(result['gt_labels']))
+            timestamps.append(result['img_info']['timestamp'])
 
         batch_results['img'] = torch.FloatTensor(np.stack(imgs))
+        batch_results['gt_labels'] = gt_labels 
         batch_results['gt_bboxes_3d'] = gt_bboxes_3d
         batch_results['gt_labels_3d'] = gt_labels_3d
         batch_results['timestamp'] = timestamps 
@@ -146,105 +151,15 @@ class CustomMV3DDataset(BaseDataset):
                 if key not in batch_results:
                     img_meta[key] = res[key]
             img_meta['num_ref_frames'] = self.num_ref_frames
-            img_meta['cam_dir'] = self.multiview_indices
-            img_meta["timestamp"] = res["timestamp"]
+            img_meta['direction'] = self.multiview_indices
+            img_meta["timestamp"] = res['img_info']["timestamp"]
+            img_meta['gt_bboxes3d'] = res['gt_bboxes_3d']
+            img_meta['box_type_3d'] = get_box_type(self.box_type_3d)[0]
             batch_results["img_metas"].append(img_meta)
         return batch_results
 
-    # def convert_info_frame2img(self, info_idx):
-    #     info = self.raw_data_infos[info_idx]
-    #     data_infos = []
-    #     cam_ann_infos = []
-    #     for cam_idx in range(self.num_cams):
-    #         # construct data_info for each front-cam
-    #         data_info = copy.deepcopy(info)
-    #         if cam_idx != 0:
-    #             data_info['image']['image_path'] = \
-    #                 info['image']['image_path'].replace(
-    #                     'image_0', f'image_{cam_idx}')
-    #             data_info['calib']['P0'] = info['calib'][f'P{cam_idx}']
-    #             data_info['calib']['Tr_velo_to_cam'] = info['calib'][
-    #                 f'Tr_velo_to_cam{cam_idx}']
-    #         data_infos.append(data_info)
-    #         if self.convert_anns:
-    #             # convert anns from cam_0 to lidar then to cam_idx
-    #             if cam_idx != 0:
-    #                 data_info['annos'] = convert_annos(info, cam_idx)
-    #             cam_ann_infos.append(
-    #                 get_waymo_2d_boxes(data_info, occluded=[0], mono3d=True))
-    #     return (data_infos, cam_ann_infos)
-
-    def load_annotations(self, ann_file):
-        # re-write load_annotations for different tasks
-        # sometimes need to re-organize self.data_infos
-        # e.g.: frame-based -> cam-based
-        raw_data_infos = mmcv.load(ann_file)[::self.load_interval]
-        if self.cam_sync and ('annos' in raw_data_infos[0]):
-            for raw_data_info in raw_data_infos:
-                raw_data_info['annos'] = raw_data_info['cam_sync_annos']
-        if self.load_mode == 'lidar_frame':
-            self.raw_data_infos = raw_data_infos
-            return raw_data_infos
-        elif self.load_mode == 'cam_mono':
-            self.num_cams = 1
-            if not self.test_mode:
-                self.cam_ann_infos = []
-                print('Converting frame-based ann infos to image-based...')
-                for info in raw_data_infos:
-                    self.cam_ann_infos.append(
-                        get_waymo_2d_boxes(info, occluded=[0], mono3d=True))
-            self.raw_data_infos = raw_data_infos
-            return raw_data_infos
-        elif self.load_mode == 'cam_frame':
-            self.num_cams = 5
-            data_infos = []
-            if not self.test_mode:
-                self.cam_ann_infos = []
-            self.raw_data_infos = raw_data_infos
-            print('Converting frame-based ann infos to image-based...')
-            # use parallel processing to accelerate the re-organization
-            info_ids = range(len(self.raw_data_infos))
-            # track_parallel_progress does not work here
-            # because the additional serialization costs are
-            # not economical
-            if 'waymo_infos_train.pkl' in ann_file:
-                multi_view_ann_file = ann_file.replace(
-                    'waymo_infos_train.pkl', 'waymo_infos_train_mv.pkl')
-            elif 'waymo_infos_trainval.pkl' in ann_file:
-                multi_view_ann_file = ann_file.replace(
-                    'waymo_infos_trainval.pkl', 'waymo_infos_trainval_mv.pkl')
-            if (not self.test_mode) and osp.exists(multi_view_ann_file):
-                self.convert_anns = False
-                cam_ann_infos = mmcv.load(multi_view_ann_file)
-                if len(cam_ann_infos) != self.num_cams * len(
-                        self.raw_data_infos):
-                    # The info is a full dataset version
-                    self.cam_ann_infos = []
-                    for info_id in info_ids:
-                        self.cam_ann_infos.extend(cam_ann_infos[(
-                            self.load_interval * info_id * self.num_cams):(
-                                (self.load_interval * info_id + 1) *
-                                self.num_cams)])
-                    assert len(self.cam_ann_infos) == self.num_cams * len(
-                        self.raw_data_infos), 'cam_ann_infos has ' \
-                        f'length {len(self.cam_ann_infos)}, is not equal ' \
-                        f'to {self.num_cams} * {len(self.raw_data_infos)}!'
-                else:
-                    self.cam_ann_infos = cam_ann_infos
-            else:
-                self.convert_anns = (not self.test_mode)
-            for info_id in mmcv.track_iter_progress(info_ids):
-                result = self.convert_info_frame2img(info_id)
-                data_infos += result[0]
-                if self.convert_anns:
-                    self.cam_ann_infos += result[1]
-            # if there is not converted multi-view ann file
-            if self.convert_anns and (not osp.exists(multi_view_ann_file)):
-                mmcv.dump(self.cam_ann_infos, multi_view_ann_file)
-            return data_infos
-
     def _get_pts_filename(self, idx):
-        pts_filename = osp.join(self.root_split, self.pts_prefix,
+        pts_filename = os.path.join(self.root_split, self.pts_prefix,
                                 f'{idx:07d}.bin')
         return pts_filename
 
@@ -332,7 +247,7 @@ class CustomMV3DDataset(BaseDataset):
             # get img_info for monocular setting
             cam_intrinsic = P0
             input_dict['img_info'] = dict(
-                filename=img_filename,
+                img_filename=img_filename,
                 cam_intrinsic=cam_intrinsic,
                 width=info['image']['image_shape'][1],
                 height=info['image']['image_shape'][0])
@@ -465,7 +380,7 @@ class CustomMV3DDataset(BaseDataset):
         """
         if pklfile_prefix is None:
             tmp_dir = tempfile.TemporaryDirectory()
-            pklfile_prefix = osp.join(tmp_dir.name, 'results')
+            pklfile_prefix = os.path.join(tmp_dir.name, 'results')
         else:
             tmp_dir = None
 
@@ -505,16 +420,16 @@ class CustomMV3DDataset(BaseDataset):
         if 'waymo' in data_format:
             from ..core.evaluation.waymo_utils.prediction_kitti_to_waymo import \
                 KITTI2Waymo  # noqa
-            waymo_root = osp.join(
+            waymo_root = os.path.join(
                 self.data_root.split('kitti_format')[0], 'waymo_format')
             if self.split == 'training':
-                waymo_tfrecords_dir = osp.join(waymo_root, 'validation')
+                waymo_tfrecords_dir = os.path.join(waymo_root, 'validation')
                 prefix = '1'
             elif self.split == 'testing':
-                waymo_tfrecords_dir = osp.join(waymo_root, 'testing')
+                waymo_tfrecords_dir = os.path.join(waymo_root, 'testing')
                 prefix = '2'
             elif self.split == 'testing_cam_only':
-                waymo_tfrecords_dir = osp.join(waymo_root, 'testing')
+                waymo_tfrecords_dir = os.path.join(waymo_root, 'testing')
                 prefix = '3'
             else:
                 raise ValueError('Not supported split value.')
@@ -552,6 +467,7 @@ class CustomMV3DDataset(BaseDataset):
 
     def evaluate(self,
                  results,
+                 ground_truth,
                  metric='waymo',
                  logger=None,
                  pklfile_prefix=None,
@@ -593,8 +509,8 @@ class CustomMV3DDataset(BaseDataset):
             from core.evaluation import kitti_eval
 
             # Note: Here we use raw_data_infos for evaluation
-            gt_annos = [info['annos'] for info in self.raw_data_infos]
-
+            gt_annos = ground_truth 
+            # [info['annos'] for info in self.raw_data_infos]
             if isinstance(result_files, dict):
                 ap_dict = dict()
                 for name, result_files_ in result_files.items():
@@ -620,14 +536,14 @@ class CustomMV3DDataset(BaseDataset):
                         eval_types=['bbox'])
                 else:
                     ap_result_str, ap_dict = kitti_eval(
-                        gt_annos, result_files, self.CLASSES)
+                        gt_annos, result_files, self.CLASSES, eval_types = ['bev', '3d'])
                 print_log('\n' + ap_result_str, logger=logger)
         if 'waymo' in metric:
-            waymo_root = osp.join(
+            waymo_root = os.path.join(
                 self.data_root.split('kitti_format')[0], 'waymo_format')
             if pklfile_prefix is None:
                 eval_tmp_dir = tempfile.TemporaryDirectory()
-                pklfile_prefix = osp.join(eval_tmp_dir.name, 'results')
+                pklfile_prefix = os.path.join(eval_tmp_dir.name, 'results')
             else:
                 eval_tmp_dir = None
             result_files, tmp_dir = self.format_results(
@@ -755,6 +671,7 @@ class CustomMV3DDataset(BaseDataset):
             self.show(results, out_dir, show=show, pipeline=pipeline)
         return ap_dict
 
+
     def bbox2result_kitti(self,
                           net_outputs,
                           class_names,
@@ -790,8 +707,7 @@ class CustomMV3DDataset(BaseDataset):
                 if idx % self.num_cams == 0:
                     box_dict_per_frame = []
                     cam0_idx = idx
-
-            box_dict = self.convert_valid_bboxes(pred_dicts, info)
+            # box_dict = self.convert_valid_bboxes(pred_dicts, info)
 
             if self.load_mode == 'cam_frame':
                 box_dict_per_frame.append(box_dict)
@@ -800,30 +716,28 @@ class CustomMV3DDataset(BaseDataset):
                 box_dict = self.merge_multi_view_boxes(
                     box_dict_per_frame, self.data_infos[cam0_idx])
 
-            if len(box_dict['bbox']) > 0:
-                box_2d_preds = box_dict['bbox']
-                box_preds = box_dict['box3d_camera']
-                scores = box_dict['scores']
-                box_preds_lidar = box_dict['box3d_lidar']
-                label_preds = box_dict['label_preds']
+
+            if len(pred_dicts['boxes_3d']) > 0:
+                box_preds = pred_dicts['boxes_3d']
+                scores = pred_dicts['scores_3d']
+                box_preds_lidar = pred_dicts['boxes_3d']
+                label_preds = pred_dicts['labels_3d']
 
                 anno = {
                     'name': [],
+                    'bbox' : [],
                     'truncated': [],
                     'occluded': [],
                     'alpha': [],
-                    'bbox': [],
                     'dimensions': [],
                     'location': [],
                     'rotation_y': [],
                     'score': []
                 }
 
-                for box, box_lidar, bbox, score, label in zip(
-                        box_preds, box_preds_lidar, box_2d_preds, scores,
+                for box, box_lidar, score, label in zip(
+                        box_preds, box_preds_lidar,  scores,
                         label_preds):
-                    bbox[2:] = np.minimum(bbox[2:], image_shape[::-1])
-                    bbox[:2] = np.maximum(bbox[:2], [0, 0])
                     anno['name'].append(class_names[int(label)])
                     anno['truncated'].append(0.0)
                     anno['occluded'].append(0)
@@ -836,7 +750,7 @@ class CustomMV3DDataset(BaseDataset):
                         # we also do not evaluate alpha for waymo
                         anno['alpha'].append(-np.arctan2(box[0], box[2]) +
                                              box[6])
-                    anno['bbox'].append(bbox)
+                    anno['bbox'].append(np.zeros(4))
                     anno['dimensions'].append(box[3:6])
                     anno['location'].append(box[:3])
                     anno['rotation_y'].append(box[6])
@@ -848,18 +762,15 @@ class CustomMV3DDataset(BaseDataset):
                 if submission_prefix is not None:
                     curr_file = f'{submission_prefix}/{sample_idx:07d}.txt'
                     with open(curr_file, 'w') as f:
-                        bbox = anno['bbox']
                         loc = anno['location']
                         dims = anno['dimensions']  # lhw -> hwl
 
-                        for idx in range(len(bbox)):
+                        for idx in range(len(loc)):
                             print(
                                 '{} -1 -1 {:.4f} {:.4f} {:.4f} {:.4f} '
                                 '{:.4f} {:.4f} {:.4f} '
                                 '{:.4f} {:.4f} {:.4f} {:.4f} {:.4f} {:.4f}'.
                                 format(anno['name'][idx], anno['alpha'][idx],
-                                       bbox[idx][0], bbox[idx][1],
-                                       bbox[idx][2], bbox[idx][3],
                                        dims[idx][1], dims[idx][2],
                                        dims[idx][0], loc[idx][0], loc[idx][1],
                                        loc[idx][2], anno['rotation_y'][idx],

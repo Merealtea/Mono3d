@@ -27,7 +27,8 @@ class SingleStageMono3DDetector(SingleStageDetector):
                  train_cfg=None,
                  test_cfg=None,
                  pretrained=None,
-                 init_cfg=None):
+                 init_cfg=None,
+                 vehicle=None):
         super(SingleStageDetector, self).__init__(init_cfg)
         if pretrained:
             warnings.warn('DeprecationWarning: pretrained is deprecated, '
@@ -39,6 +40,7 @@ class SingleStageMono3DDetector(SingleStageDetector):
 
         bbox_head.update(train_cfg=train_cfg)
         bbox_head.update(test_cfg=test_cfg)
+        bbox_head.update(vehicle=vehicle)
         self.bbox_head = build_head(bbox_head)
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
@@ -58,7 +60,8 @@ class SingleStageMono3DDetector(SingleStageDetector):
                       centers2d,
                       depths,
                       attr_labels=None,
-                      gt_bboxes_ignore=None):
+                      gt_bboxes_ignore=None,
+                      **kwargs):
         """
         Args:
             img (Tensor): Input images of shape (N, C, H, W).
@@ -93,7 +96,7 @@ class SingleStageMono3DDetector(SingleStageDetector):
                                               attr_labels, gt_bboxes_ignore)
         return losses
 
-    def simple_test(self, img, img_metas, rescale=False):
+    def simple_test(self, img, img_metas, rescale=False, **kwargs):
         """Test function without test time augmentation.
 
         Args:
@@ -118,7 +121,7 @@ class SingleStageMono3DDetector(SingleStageDetector):
                 bbox2result(bboxes2d, labels, self.bbox_head.num_classes)
                 for bboxes, scores, labels, attrs, bboxes2d in bbox_outputs
             ]
-            bbox_outputs = [bbox_outputs[0][:-1]]
+            bbox_outputs = [output[:-1] for output in bbox_outputs]
 
         bbox_img = [
             bbox3d2result(bboxes, scores, labels, attrs)

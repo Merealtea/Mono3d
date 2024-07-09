@@ -126,7 +126,7 @@ class LoadMultiViewImageFromFiles(object):
                 - scale_factor (float): Scale factor.
                 - img_norm_cfg (dict): Normalization configuration of images.
         """
-        filename = results['img_filename']
+        filename = results['img_info']['img_filename']
         # img is of shape (h, w, c, num_views)
         img = [cv2.imread(name) for name in filename]
         if self.color_type == 'rgb':
@@ -135,7 +135,7 @@ class LoadMultiViewImageFromFiles(object):
         
         if self.to_float32:
             img = img.astype(np.float32)
-        results['filename'] = filename
+        results['img_filename'] = filename
         results["num_views"] = len(filename)
         # unravel to list, see `DefaultFormatBundle` in formatting.py
         # which will transpose each image separately and then stack into array
@@ -229,6 +229,7 @@ class LoadAnnotations3D():
         results["gt_bboxes"] = []
         for ann in annotations:
             results["gt_bboxes"].append(ann['bbox'])
+            
         results['gt_bboxes'] = np.array(results['gt_bboxes']).reshape(-1, 4)
         results['bbox_fields'].append("gt_bboxes")
         return results
@@ -251,7 +252,7 @@ class LoadAnnotations3D():
         results["gt_bboxes_3d"] = []
         for ann in annotations:
             results["gt_bboxes_3d"].append(ann['bbox3d'])
-
+            
         results['gt_bboxes_3d'] = np.array(results['gt_bboxes_3d']).reshape(-1, 9)
         if not self.with_vel:
             results['gt_bboxes_3d'] = results['gt_bboxes_3d'][:, :-2]
@@ -302,8 +303,9 @@ class LoadAnnotations3D():
             if 'label_3d' in ann:
                 results['gt_labels_3d'].append(ann['label_3d'])
             else:
-                results['gt_labels_3d'].append([0] * len(ann['bbox3d']))
+                results['gt_labels_3d'].append([0] * len(ann['bbox3d'].reshape(-1, 9)))
         results['gt_labels_3d'] = np.array(results['gt_labels_3d']).reshape(-1)
+        
         results['attr_labels'] = np.zeros_like(results['gt_labels_3d'])
         results['gt_labels'] = np.zeros_like(results['gt_labels_3d'])
         return results

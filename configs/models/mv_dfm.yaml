@@ -1,4 +1,5 @@
 type : 'MultiViewDfMFisheye'
+vehicle : 'Rock'
 backbone : 
     type : 'ResNet'
     depth : 101
@@ -12,7 +13,7 @@ backbone :
     style : 'pytorch'
     init_cfg : 
       type : 'Pretrained' 
-      checkpoint : 'torchvision://resnet101'
+      checkpoint : '/data/cxy/Mono3d/ckpt/PGDwithFcos3dhead/epoch_40_backbone.pth'
     dcn : 
       type : 'DCNv2' 
       deform_groups : 1 
@@ -112,8 +113,8 @@ train_cfg :
 test_cfg : 
     use_rotate_nms : True
     nms_across_levels : False
-    nms_thr : 0.05
-    score_thr : 0.001
+    nms_thr : 0.01
+    score_thr : 0.1
     min_bbox_size : 0
     nms_pre : 500
     max_num : 100

@@ -5,7 +5,7 @@ import numpy as np
 from datasets.basedataset import BaseDataset
 from datasets.pipelines import Compose
 import torch
-
+from core.bbox import get_box_type
 
 class CustomMonoDataset(BaseDataset):
     r"""Monocular 3D detection on Custom Dataset.
@@ -38,12 +38,10 @@ class CustomMonoDataset(BaseDataset):
             Defaults to False.
         version (str, optional): Dataset version. Defaults to 'v1.0-trainval'.
     """
-    CLASSES = ('car', 'truck', 'trailer', 'bus', 'construction_vehicle',
-               'bicycle', 'motorcycle', 'pedestrian', 'traffic_cone',
-               'barrier')
+    CLASSES = ('Pedestrian', )
     DefaultAttribute = {
         'car': 'vehicle.parked',
-        'pedestrian': 'pedestrian.moving',
+        'Pedestrian': 'pedestrian.moving',
         'trailer': 'vehicle.parked',
         'truck': 'vehicle.parked',
         'bus': 'vehicle.moving',
@@ -69,20 +67,21 @@ class CustomMonoDataset(BaseDataset):
                  pipeline,
                  load_interval=1,
                  with_velocity=False,
-                 modality=None,
                  box_type_3d='Camera',
-                 use_valid_flag=False,
                  classes=None,
                  proposal_file=None,
                  test_mode=False,
                  filter_empty_gt=True,
-                 file_client_args=dict(backend='disk'),
+                 load_mode="cam_mono",
+                 num_camera = 1,
+                 vehicle = None,
                  **kwargs):
-        super(CustomMonoDataset, self).__init__(data_root, img_prefix, ann_prefix, test_mode, classes)
+        super(CustomMonoDataset, self).__init__(data_root, img_prefix, ann_prefix, test_mode, classes, load_mode, num_camera, vehicle)
         self.proposal_file = proposal_file
         self.filter_empty_gt = filter_empty_gt
         self.with_class = self.classes is not None
         self.with_velocity = with_velocity
+        self.box_type_3d = box_type_3d
 
         # load training/test data info
         if not self.test_mode:
@@ -94,12 +93,6 @@ class CustomMonoDataset(BaseDataset):
         self.test_mode = False
         # processing pipeline
         self.pipeline = Compose(pipeline)
-
-    def get_single_item(self, idx):
-        img_info, ann_info = self.data_infos[idx]
-
-        results = dict(img_info=img_info, ann_info=ann_info, bbox_fields = [])
-        return self.pipeline(results)
 
     def collate(self, results):
         batch_results = {}
@@ -141,10 +134,9 @@ class CustomMonoDataset(BaseDataset):
                     img_meta[key] = res[key]
             img_meta["timestamp"] = res["timestamp"]
             img_meta['gt_bboxes3d'] = res['gt_bboxes_3d']
+            img_meta['box_type_3d'] = get_box_type(self.box_type_3d)[0]
             batch_results["img_metas"].append(img_meta)
         if self.test_mode:
             print("gt bboxes: ", batch_results['gt_bboxes'])
         return batch_results
-
-
-
+    

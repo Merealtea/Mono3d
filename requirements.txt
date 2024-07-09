@@ -1,0 +1,12 @@
+mmcv-full==1.6.0
+scipy==1.9.0
+numba==0.53.0
+numpy==1.19.0
+matplotlib==3.5.0 
+pandas==1.4.0
+yapf==0.40.0
+nuscenes-devkit==1.0.8
+protobuf==4.25
+pycocotools==2.0.7
+terminaltables==3.1.10
+waymo-open-dataset-tf-2-11-0==1.5.0

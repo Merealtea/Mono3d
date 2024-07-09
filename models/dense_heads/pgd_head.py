@@ -11,7 +11,7 @@ from core.bbox import points_cam2img, points_img2cam
 from core import distance2bbox, multi_apply
 from ..builder import HEADS, build_loss
 from .fcos_mono3d_head import FCOSMono3DHead
-
+import cv2
 
 @HEADS.register_module()
 class PGDHead(FCOSMono3DHead):
@@ -309,7 +309,8 @@ class PGDHead(FCOSMono3DHead):
             tuple[Tensor]: Exterior 2D boxes from projected 3D boxes,
                 predicted 2D boxes and keypoint targets (if necessary).
         """
-        views = [np.array(img_meta['cam2img']) for img_meta in img_metas]
+        # views = [np.array(img_meta['cam2img']) for img_meta in img_metas]
+        directions = [img_meta['direction'] for img_meta in img_metas]
         num_imgs = len(img_metas)
         img_idx = []
         for label in labels_3d:
@@ -377,22 +378,28 @@ class PGDHead(FCOSMono3DHead):
             mask = (pos_img_idx == idx)
             if pos_strided_bbox_preds[mask].shape[0] == 0:
                 continue
-            cam2img = torch.eye(
-                4,
-                dtype=pos_strided_bbox_preds.dtype,
-                device=pos_strided_bbox_preds.device)
-            view_shape = views[idx].shape
-            cam2img[:view_shape[0], :view_shape[1]] = \
-                pos_strided_bbox_preds.new_tensor(views[idx])
+            # cam2img = torch.eye(
+            #     4,
+            #     dtype=pos_strided_bbox_preds.dtype,
+            #     device=pos_strided_bbox_preds.device)
+            
+            # view_shape = views[idx].shape
+            # cam2img[:view_shape[0], :view_shape[1]] = \
+            #     pos_strided_bbox_preds.new_tensor(views[idx])
 
             centers2d_preds = pos_strided_bbox_preds.clone()[mask, :2]
             centers2d_targets = pos_bbox_targets_3d.clone()[mask, :2]
-            centers3d_targets = points_img2cam(pos_bbox_targets_3d[mask, :3],
-                                               views[idx])
+            # centers3d_targets = points_img2cam(pos_bbox_targets_3d[mask, :3],
+            #                                    views[idx])
+            centers3d_targets = self.cam_models[directions[idx]]\
+                .image2cam(pos_bbox_targets_3d[mask, :2].T, pos_bbox_targets_3d[mask, 2]).T
 
             # use predicted depth to re-project the 2.5D centers
-            pos_strided_bbox_preds[mask, :3] = points_img2cam(
-                pos_strided_bbox_preds[mask, :3], views[idx])
+            # pos_strided_bbox_preds[mask, :3] = points_img2cam(
+            #     pos_strided_bbox_preds[mask, :3], views[idx])
+            pos_strided_bbox_preds[mask, :3] = self.cam_models[directions[idx]]\
+                .image2cam(pos_strided_bbox_preds[mask, :2].T, pos_strided_bbox_preds[mask, 2]).T
+
             pos_bbox_targets_3d[mask, :3] = centers3d_targets
 
             # depth fixed when computing re-project 3D bboxes
@@ -400,27 +407,35 @@ class PGDHead(FCOSMono3DHead):
                 pos_bbox_targets_3d.clone()[mask, 2]
 
             # decode yaws
-            if self.use_direction_classifier:
-                pos_dir_cls_scores = torch.max(
-                    pos_dir_cls_preds[mask], dim=-1)[1]
-                pos_strided_bbox_preds[mask] = self.bbox_coder.decode_yaw(
-                    pos_strided_bbox_preds[mask], centers2d_preds,
-                    pos_dir_cls_scores, self.dir_offset, cam2img)
-            pos_bbox_targets_3d[mask, 6] = torch.atan2(
-                centers2d_targets[:, 0] - cam2img[0, 2],
-                cam2img[0, 0]) + pos_bbox_targets_3d[mask, 6]
+            # if self.use_direction_classifier:
+            #     pos_dir_cls_scores = torch.max(
+            #         pos_dir_cls_preds[mask], dim=-1)[1]
+                # pos_strided_bbox_preds[mask] = self.bbox_coder.decode_yaw(
+                #     pos_strided_bbox_preds[mask], centers2d_preds,
+                #     pos_dir_cls_scores, self.dir_offset, cam2img)
+            # pos_bbox_targets_3d[mask, 6] = torch.atan2(
+            #     centers2d_targets[:, 0] - cam2img[0, 2],
+            #     cam2img[0, 0]) + pos_bbox_targets_3d[mask, 6]
 
             corners = img_metas[0]['box_type_3d'](
                 pos_strided_bbox_preds[mask],
                 box_dim=self.bbox_coder.bbox_code_size,
                 origin=(0.5, 0.5, 0.5)).corners
-            box_corners_in_image[mask] = points_cam2img(corners, cam2img)
+            # box_corners_in_image[mask] = points_cam2img(corners, cam2img)
+            corner_shape = corners.shape[:2]
+            corners = corners.reshape(-1, 3).T
+            box_corners_in_image[mask] = self.cam_models[directions[idx]]\
+                .cam2image(corners, filter_points=False).T.reshape((corner_shape[0],corner_shape[1],2))
 
             corners_gt = img_metas[0]['box_type_3d'](
                 pos_bbox_targets_3d[mask, :self.bbox_code_size],
                 box_dim=self.bbox_coder.bbox_code_size,
                 origin=(0.5, 0.5, 0.5)).corners
-            box_corners_in_image_gt[mask] = points_cam2img(corners_gt, cam2img)
+            corner_shape = corners_gt.shape[:2]
+            corners_gt = corners_gt.reshape(-1, 3).T
+            # box_corners_in_image_gt[mask] = points_cam2img(corners_gt, cam2img)
+            box_corners_in_image_gt[mask] = self.cam_models[directions[idx]]\
+                .cam2image(corners_gt, filter_points=False).T.reshape((corner_shape[0],corner_shape[1],2))
 
         minxy = torch.min(box_corners_in_image, dim=1)[0]
         maxxy = torch.max(box_corners_in_image, dim=1)[0]
@@ -589,6 +604,7 @@ class PGDHead(FCOSMono3DHead):
             f'attr_preds: {len(cls_scores)}, {len(bbox_preds)}, ' \
             f'{len(dir_cls_preds)}, {len(depth_cls_preds)}, {len(weights)}' \
             f'{len(centernesses)}, {len(attr_preds)} are inconsistent.'
+        
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
         all_level_points = self.get_points(featmap_sizes, bbox_preds[0].dtype,
                                            bbox_preds[0].device)
@@ -772,7 +788,7 @@ class PGDHead(FCOSMono3DHead):
                                                         kpts_start + 16].sum()
             if self.pred_bbox2d:
                 loss_dict['loss_bbox2d'] = pos_bbox_preds[:, -4:].sum()
-                loss_dict['loss_consistency'] = pos_bbox_preds[:, -4:].sum()
+                # loss_dict['loss_consistency'] = pos_bbox_preds[:, -4:].sum()
             loss_dict['loss_centerness'] = pos_centerness.sum()
             if self.use_direction_classifier:
                 loss_dict['loss_dir'] = pos_dir_cls_preds.sum()
@@ -781,8 +797,8 @@ class PGDHead(FCOSMono3DHead):
                 loss_fuse_depth = \
                     sig_alpha * pos_bbox_preds[:, 2].sum() + \
                     (1 - sig_alpha) * pos_depth_cls_preds.sum()
-                if self.weight_dim != -1:
-                    loss_fuse_depth *= torch.exp(-pos_weights[:, 0].sum())
+                # if self.weight_dim != -1:
+                #     loss_fuse_depth *= torch.exp(-pos_weights[:, 0].sum())
                 loss_dict['loss_depth'] = loss_fuse_depth
             if self.pred_attrs:
                 loss_dict['loss_attr'] = pos_attr_preds.sum()
@@ -952,7 +968,8 @@ class PGDHead(FCOSMono3DHead):
             tuples[Tensor]: Predicted 3D boxes, scores, labels, attributes and
                 2D boxes (if necessary).
         """
-        view = np.array(input_meta['cam2img'])
+        direction = input_meta['direction']
+        # view = np.array(input_meta['cam2img'])
         scale_factor = input_meta['scale_factor']
         cfg = self.test_cfg if cfg is None else cfg
         assert len(cls_scores) == len(bbox_preds) == len(mlvl_points)
@@ -968,10 +985,10 @@ class PGDHead(FCOSMono3DHead):
         if self.pred_bbox2d:
             mlvl_bboxes2d = []
 
-        for cls_score, bbox_pred, dir_cls_pred, depth_cls_pred, weight, \
-                attr_pred, centerness, points in zip(
+        for i, (cls_score, bbox_pred, dir_cls_pred, depth_cls_pred, weight, \
+                attr_pred, centerness, points) in enumerate(zip(
                     cls_scores, bbox_preds, dir_cls_preds, depth_cls_preds,
-                    weights, attr_preds, centernesses, mlvl_points):
+                    weights, attr_preds, centernesses, mlvl_points)):
             assert cls_score.size()[-2:] == bbox_pred.size()[-2:]
             scores = cls_score.permute(1, 2, 0).reshape(
                 -1, self.cls_out_channels).sigmoid()
@@ -982,6 +999,12 @@ class PGDHead(FCOSMono3DHead):
             depth_cls_score = F.softmax(
                 depth_cls_pred, dim=-1).topk(
                     k=2, dim=-1)[0].mean(dim=-1)
+            shape = weight.shape
+            # import pdb; pdb.set_trace()
+            # cv2.imwrite(f'{direction}_{input_meta["timestamp"]}_score.png', scores.cpu().numpy().reshape(shape[1], shape[2]) * 255)
+            # cv2.imwrite(f'{direction}_{input_meta["timestamp"]}_weight.png', ((torch.exp(-weight)/ torch.max(torch.exp(-weight))).cpu().numpy()*255)[0])
+            # cv2.imwrite(f'{direction}_{input_meta["timestamp"]}_depth_cls_score.png', depth_cls_score.cpu().numpy().reshape(shape[1], shape[2]) * 255)
+            # cv2.imwrite(f'{direction}_{input_meta["timestamp"]}_center.png', centerness.sigmoid().cpu().numpy().reshape(shape[1], shape[2]) * 255)
             if self.weight_dim != -1:
                 weight = weight.permute(1, 2, 0).reshape(-1, self.weight_dim)
             else:
@@ -990,11 +1013,11 @@ class PGDHead(FCOSMono3DHead):
             attr_pred = attr_pred.permute(1, 2, 0).reshape(-1, self.num_attrs)
             attr_score = torch.max(attr_pred, dim=-1)[1]
             centerness = centerness.permute(1, 2, 0).reshape(-1).sigmoid()
-
-            bbox_pred = bbox_pred.permute(1, 2,
-                                          0).reshape(-1,
-                                                     sum(self.group_reg_dims))
+            bbox_pred = bbox_pred.permute(1, 2,0).reshape(-1,sum(self.group_reg_dims))
             bbox_pred3d = bbox_pred[:, :self.bbox_coder.bbox_code_size]
+
+            # cv2.imwrite(f'{direction}_{input_meta["timestamp"]}_{i}_depth.png', bbox_pred3d[:, 2].cpu().numpy().reshape(shape[1], shape[2]) * 80)
+
             if self.pred_bbox2d:
                 bbox_pred2d = bbox_pred[:, -4:]
             nms_pre = cfg.get('nms_pre', -1)
@@ -1004,6 +1027,7 @@ class PGDHead(FCOSMono3DHead):
                     merged_scores *= depth_cls_score[:, None]
                     if self.weight_dim != -1:
                         merged_scores *= depth_uncertainty[:, None]
+                # cv2.imwrite(f'{direction}_{input_meta["timestamp"]}_merged_score.png', merged_scores.cpu().numpy().reshape(shape[1], shape[2]) * 255)
                 max_scores, _ = merged_scores.max(dim=1)
                 _, topk_inds = max_scores.topk(nms_pre)
                 points = points[topk_inds, :]
@@ -1021,19 +1045,13 @@ class PGDHead(FCOSMono3DHead):
             # change the offset to actual center predictions
             bbox_pred3d[:, :2] = points - bbox_pred3d[:, :2]
             if rescale:
-                # bbox_pred3d[:, :2] /= bbox_pred3d[:, :2].new_tensor(
-                #     scale_factor[:2])
+                bbox_pred3d[:, :2] /= bbox_pred3d[:, :2].new_tensor(
+                    scale_factor[:2])
                 if self.pred_bbox2d:
                     bbox_pred2d /= bbox_pred2d.new_tensor(scale_factor)
-            if self.use_depth_classifier:
-                prob_depth_pred = self.bbox_coder.decode_prob_depth(
-                    depth_cls_pred, self.depth_range, self.depth_unit,
-                    self.division, self.num_depth_cls)
-                sig_alpha = torch.sigmoid(self.fuse_lambda)
-                bbox_pred3d[:, 2] = sig_alpha * bbox_pred3d[:, 2] + \
-                    (1 - sig_alpha) * prob_depth_pred
             pred_center2d = bbox_pred3d[:, :3].clone()
-            bbox_pred3d[:, :3] = points_img2cam(bbox_pred3d[:, :3], view)
+            bbox_pred3d[:, :3] = self.cam_models[direction].image2cam(bbox_pred3d[:, :2].T, bbox_pred3d[:, 2]).T
+            # bbox_pred3d[:, :3] = points_img2cam(bbox_pred3d[:, :3], view)
             mlvl_centers2d.append(pred_center2d)
             mlvl_bboxes.append(bbox_pred3d)
             mlvl_scores.append(scores)
@@ -1054,13 +1072,13 @@ class PGDHead(FCOSMono3DHead):
             mlvl_bboxes2d = torch.cat(mlvl_bboxes2d)
 
         # change local yaw to global yaw for 3D nms
-        cam2img = torch.eye(
-            4, dtype=mlvl_centers2d.dtype, device=mlvl_centers2d.device)
-        cam2img[:view.shape[0], :view.shape[1]] = \
-            mlvl_centers2d.new_tensor(view)
-        mlvl_bboxes = self.bbox_coder.decode_yaw(mlvl_bboxes, mlvl_centers2d,
-                                                 mlvl_dir_scores,
-                                                 self.dir_offset, cam2img)
+        # cam2img = torch.eye(
+        #     4, dtype=mlvl_centers2d.dtype, device=mlvl_centers2d.device)
+        # cam2img[:view.shape[0], :view.shape[1]] = \
+        #     mlvl_centers2d.new_tensor(view)
+        # mlvl_bboxes = self.bbox_coder.decode_yaw(mlvl_bboxes, mlvl_centers2d,
+        #                                          mlvl_dir_scores,
+        #                                          self.dir_offset, cam2img)
 
         mlvl_bboxes_for_nms = xywhr2xyxyr(input_meta['box_type_3d'](
             mlvl_bboxes,
@@ -1080,12 +1098,13 @@ class PGDHead(FCOSMono3DHead):
         if self.use_depth_classifier:  # multiply the depth confidence
             mlvl_depth_cls_scores = torch.cat(mlvl_depth_cls_scores)
             mlvl_nms_scores *= mlvl_depth_cls_scores[:, None]
-            if self.weight_dim != -1:
-                mlvl_depth_uncertainty = torch.cat(mlvl_depth_uncertainty)
-                mlvl_nms_scores *= mlvl_depth_uncertainty[:, None]
+            # if self.weight_dim != -1:
+            #     mlvl_depth_uncertainty = torch.cat(mlvl_depth_uncertainty)
+            #     mlvl_nms_scores *= mlvl_depth_uncertainty[:, None]
+
         results = box3d_multiclass_nms(mlvl_bboxes, mlvl_bboxes_for_nms,
-                                       mlvl_nms_scores, cfg.score_thr,
-                                       cfg.max_per_img, cfg, mlvl_dir_scores,
+                                       mlvl_nms_scores, cfg['score_thr'],
+                                       cfg['max_per_img'], cfg, mlvl_dir_scores,
                                        mlvl_attr_scores, mlvl_bboxes2d)
         bboxes, scores, labels, dir_scores, attrs = results[0:5]
         attrs = attrs.to(labels.dtype)  # change data type to int
@@ -1160,7 +1179,7 @@ class PGDHead(FCOSMono3DHead):
 
         # get labels and bbox_targets of each image
         _, bbox_targets_list, labels_3d_list, bbox_targets_3d_list, \
-            centerness_targets_list, attr_targets_list = multi_apply(
+            centerness_targets_list, attr_targets_list, _ = multi_apply(
                 self._get_target_single,
                 gt_bboxes_list,
                 gt_labels_list,

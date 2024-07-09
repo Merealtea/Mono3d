@@ -34,6 +34,7 @@ class MultiViewDfMFisheye(DfM):
                  temporal_aggregate='mean',
                  transform_depth=True,
                  pretrained=None,
+                 vehicle = None,
                  init_cfg=None):
         super().__init__(
             backbone=backbone,
@@ -66,7 +67,7 @@ class MultiViewDfMFisheye(DfM):
         self.transform_depth = transform_depth
 
         self.cam_models = dict(zip(["left", "right", "front", "back"], 
-                                   [CamModel(cam_dir, "torch", "cuda:0") for cam_dir in ["left", "right", "front", "back"]]) )
+                                   [CamModel(cam_dir, vehicle, "torch", "cuda:0") for cam_dir in ["left", "right", "front", "back"]]) )
 
     def extract_feat(self, img, img_metas):
         """
@@ -101,8 +102,7 @@ class MultiViewDfMFisheye(DfM):
                 prev_feats = self.neck(prev_feats)[0]
             _, C_feat, H_feat, W_feat = cur_feats.shape
             cur_feats = cur_feats.view(batch_size, -1, C_feat, H_feat, W_feat)
-            prev_feats = prev_feats.view(batch_size, -1, C_feat, H_feat,
-                                         W_feat)
+            prev_feats = prev_feats.view(batch_size, -1, C_feat, H_feat, W_feat)
             batch_feats = torch.cat([cur_feats, prev_feats], dim=1)
         else:
             batch_imgs = img.view(-1, C_in, H, W)
@@ -157,7 +157,7 @@ class MultiViewDfMFisheye(DfM):
                 volume = []
                 valid_flags = []
                 for view_idx in range(num_views):
-                    cam_dir = img_meta['cam_dir'][view_idx]
+                    cam_dir = img_meta['direction'][view_idx]
                     sample_idx = frame_idx * num_views + view_idx
                     sample_results = point_sample_fisheye(
                         img_meta,
@@ -332,6 +332,7 @@ class MultiViewDfMFisheye(DfM):
             stereo_feat = feats[1]
             depth_volumes, _, depth_preds = self.depth_head(stereo_feat)
         """
+
         if not isinstance(self.bbox_head_3d, CenterHead):
             bbox_list = self.bbox_head_3d.get_bboxes(*outs, img_metas)
         else:

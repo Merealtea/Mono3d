@@ -1,0 +1,35 @@
+model_config : /data/cxy/Mono3d/configs/models/pgd_with_fcos3dhead.yaml
+dataset_config : /data/cxy/Mono3d/configs/datasets/custom-pgd_withfcos3dhead.yaml
+data_root : /data/cxy/Mono3d/data/2024-05-12-12-58-18
+save_path : ./ckpt/
+annotation_prefix : annotations
+image_prefix : images
+gpu_id : 0
+seed : 2025
+
+bbox_coordination : "CAM"
+
+optimizer : 
+    lr : 0.002
+    paramwise_cfg : 
+        bias_lr_mult : 2.0
+        bias_decay_mult : 0.0
+    grad_clip : 
+        max_norm : 35.0
+        norm_type : 2
+
+epoches : 50
+
+batch_size : 16
+save_backbone : True
+
+eval_interval : 5
+save_interval : 5
+
+lr_config : 
+    policy : step
+    warmup : linear
+    warmup_iters : 500
+    warmup_ratio : 0.3333333333333333
+    step : [8, 11]
+

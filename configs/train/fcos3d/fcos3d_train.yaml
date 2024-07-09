@@ -6,7 +6,6 @@ annotation_prefix : annotations
 image_prefix : images
 gpu_id : 0
 seed : 2025
-
 optimizer : 
     lr : 0.002
     paramwise_cfg : 
@@ -17,6 +16,10 @@ optimizer :
         norm_type : 2
 
 epoches : 50
+
+vehicle : Rock
+
+bbox_coordination : "CAM"
 
 batch_size : 16
 

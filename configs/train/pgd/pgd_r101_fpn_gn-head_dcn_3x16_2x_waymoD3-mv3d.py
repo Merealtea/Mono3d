@@ -26,8 +26,7 @@ model = dict(
         use_onlyreg_proj=True,
         strides=(8, 16, 32),
         regress_ranges=((-1, 128), (128, 256), (256, 1e8)),
-        group_reg_dims=(2, 1, 3, 1, 16,
-                        4),  # offset, depth, size, rot, kpts, bbox2d
+        group_reg_dims=(2, 1, 3, 1, 16, 4),  # offset, depth, size, rot, kpts, bbox2d
         reg_branch=(
             (256, ),  # offset
             (256, ),  # depth

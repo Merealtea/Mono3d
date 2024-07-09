@@ -39,7 +39,7 @@ bbox_head :
     pred_velo : False
     pred_bbox2d : True
     use_onlyreg_proj : True
-    pred_keypoints : False
+    pred_keypoints : True
     dir_offset : 0.7854  # pi/4
     strides : [8, 16, 32]
     regress_ranges : [[-1, 128], [128, 256], [256, 100000000]]
@@ -78,18 +78,17 @@ bbox_head :
     dcn_on_last_conv : True
     use_depth_classifier : True
     depth_branch : [256, ]
-    depth_range : [0, 50]
-    depth_unit : 10
+    depth_range : [0, 10]
+    depth_unit : 1
     division : 'uniform'
-    depth_bins : 10
+    depth_bins : 11
     bbox_coder : 
       type : 'PGDBBoxCoder'
-      code_size : 9
+      code_size : 7
     pred_keypoints : True
-    weight_dim : 1
+    weight_dim : -1
     loss_depth : 
-        type : 'UncertainSmoothL1Loss'
-        alpha : 1.0 
+        type : 'SmoothL1Loss'
         beta : 3.0
         loss_weight : 1.0
     loss_bbox2d : 
@@ -101,8 +100,8 @@ bbox_head :
       loss_weight : 0.0
     bbox_coder :
         type : 'PGDBBoxCoder'
-        base_depths : [[41.01, 18.44], ]
-        base_dims : [[0.91, 1.74, 0.84], [1.81, 1.77, 0.84], [4.73, 1.77, 2.08]]
+        base_depths :  # front object position and back object position
+        base_dims : [[0.91, 1.74, 0.84]]
         code_size : 7
 train_cfg : 
     allowed_border : 0
@@ -113,7 +112,7 @@ test_cfg :
     use_rotate_nms : True
     nms_across_levels : False
     nms_pre : 100
-    nms_thr : 0.8
-    score_thr : 0.0001
+    nms_thr : 0.1
+    score_thr : 0.01
     min_bbox_size : 0
     max_per_img : 20

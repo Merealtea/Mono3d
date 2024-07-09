@@ -131,6 +131,7 @@ class FCOSMono3DHead(AnchorFreeMono3DHead):
                  norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
                  centerness_branch=(64, ),
                  init_cfg=None,
+                 vehicle = None,
                  **kwargs):
         self.regress_ranges = regress_ranges
         self.center_sampling = center_sampling
@@ -151,7 +152,7 @@ class FCOSMono3DHead(AnchorFreeMono3DHead):
         bbox_coder['code_size'] = self.bbox_code_size
         self.bbox_coder = build_bbox_coder(bbox_coder)
         self.directions = ['front', 'back', 'left', 'right']
-        self.cam_models = dict(zip(self.directions, [CamModel(direction, "torch") for direction in self.directions]))
+        self.cam_models = dict(zip(self.directions, [CamModel(direction, vehicle,"torch") for direction in self.directions]))
     
     def _init_layers(self):
         """Initialize layers of the head."""
@@ -704,11 +705,6 @@ class FCOSMono3DHead(AnchorFreeMono3DHead):
             assert cls_score.size()[-2:] == bbox_pred.size()[-2:]
             scores = cls_score.permute(1, 2, 0).reshape(
                 -1, self.cls_out_channels).sigmoid()
-            # # We don`t care about classification any more
-            # scores = torch.zeros_like(scores).to(scores.device)
-            # # make sure there is only one prediction class
-            # scores[:, 0] += 1
-
             dir_cls_pred = dir_cls_pred.permute(1, 2, 0).reshape(-1, 2)
             dir_cls_score = torch.max(dir_cls_pred, dim=-1)[1]
             attr_pred = attr_pred.permute(1, 2, 0).reshape(-1, self.num_attrs)
@@ -1002,6 +998,7 @@ class FCOSMono3DHead(AnchorFreeMono3DHead):
         areas = areas[None].repeat(num_points, 1)
         regress_ranges = regress_ranges[:, None, :].expand(
             num_points, num_gts, 2)
+
         gt_bboxes = gt_bboxes[None].expand(num_points, num_gts, 4)
         centers2d = centers2d[None].expand(num_points, num_gts, 2)
         gt_bboxes_3d = gt_bboxes_3d[None].expand(num_points, num_gts,

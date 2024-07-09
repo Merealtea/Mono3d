@@ -9,6 +9,9 @@ img_norm_cfg : &img_norm_cfg
 
 img_scale : &img_scale [540, 960]
 
+load_mode : cam_mono
+num_camera : 1
+
 train_pipeline :
     -
         type : LoadImageFromFileMono3D

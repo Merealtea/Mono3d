@@ -17,6 +17,7 @@ class FCOSMono3D(SingleStageMono3DDetector):
                  bbox_head,
                  train_cfg=None,
                  test_cfg=None,
-                 pretrained=None):
+                 pretrained=None,
+                 vehicle=None):
         super(FCOSMono3D, self).__init__(backbone, neck, bbox_head, train_cfg,
-                                         test_cfg, pretrained)
+                                         test_cfg, pretrained, vehicle=vehicle)

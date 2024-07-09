@@ -155,11 +155,11 @@ def point_sample_fisheye(img_meta,
     if valid_flag:
         proj_pts = camera_model.world2cam(points.T) 
         depths = proj_pts[0, ...]
-        pts_2d = camera_model.cam2image(proj_pts).T
+        pts_2d = camera_model.cam2image(proj_pts, False).T
         # points_cam2img(points, proj_mat, with_depth=True)
         
     else:
-        pts_2d = camera_model.cam2image(points.T).T
+        pts_2d = camera_model.cam2image(points.T, False).T
 
     # img transformation: scale -> crop -> flip
     # the image is resized by img_scale_factor

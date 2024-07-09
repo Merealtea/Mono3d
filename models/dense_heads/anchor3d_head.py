@@ -502,7 +502,7 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
 
         score_thr = cfg.get('score_thr', 0)
         results = box3d_multiclass_nms(mlvl_bboxes, mlvl_bboxes_for_nms,
-                                       mlvl_scores, score_thr, cfg.max_num,
+                                       mlvl_scores, score_thr, cfg["max_num"],
                                        cfg, mlvl_dir_scores)
         bboxes, scores, labels, dir_scores = results
         if bboxes.shape[0] > 0:
