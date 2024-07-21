@@ -1,6 +1,6 @@
-model_config : /data/cxy/Mono3d/configs/models/mv_dfm.yaml
+model_config : /data/cxy/Mono3d/configs/models/mv_dfm_hycan.yaml
 dataset_config : /data/cxy/Mono3d/configs/datasets/custom-mv3d.yaml
-data_root : '/data/cxy/Mono3d/data/2024-05-12-12-58-18'
+data_root : '/data/cxy/Mono3d/data/2024-06-25-21-47-20'
 save_path : ./ckpt/
 annotation_prefix : annotations
 image_prefix : images
@@ -13,7 +13,7 @@ seed : 2025
 epoches : 50
 batch_size : 4
 
-vehicle : Rock  # Hycan
+vehicle :  Hycan
 
 # backbone setup
 save_backbone : False

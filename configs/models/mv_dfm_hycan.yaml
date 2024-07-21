@@ -44,7 +44,7 @@ temporal_aggregate : 'concat'
 voxel_size : [0.1, 0.1, 0.25]  # n_voxels : [240, 300, 12]
 anchor_generator : 
     type : 'AlignedAnchor3DRangeGenerator'
-    ranges : &range [[-10.0, -10.0, -3, 10.0, 10.0, 0]]
+    ranges : &range [[-10.0, -10.0, 0, 10.0, 10.0, 3]]
     rotations : [.0]
 bbox_head_3d : 
     type : 'Anchor3DHead'
