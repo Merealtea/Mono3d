@@ -2,7 +2,7 @@
 import mmcv
 import torch
 
-from core.anchor import ANCHOR_GENERATORS
+from .builder import ANCHOR_GENERATORS
 
 
 @ANCHOR_GENERATORS.register_module()

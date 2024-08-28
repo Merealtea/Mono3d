@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 import torch
+import os
 
 class CamModel:
     """ 
@@ -19,8 +20,9 @@ class CamModel:
         self.get_fisheye_model(cam_dir, vehicle)
 
     def get_fisheye_model(self, cam_dir, vehicle):
-        filename = "./configs/FisheyeParam/{}/{}/calib_results_{}.txt".format(vehicle, cam_dir, cam_dir)
-        pose_file = "./configs/FisheyeParam/{}/{}/results_{}.csv".format(vehicle, cam_dir, cam_dir)
+        root_path = os.path.dirname(__file__)
+        filename = root_path + "/{}/{}/calib_results_{}.txt".format(vehicle, cam_dir, cam_dir)
+        pose_file = root_path + "/{}/{}/results_{}.csv".format(vehicle, cam_dir, cam_dir)
 
         # extrinsic parameters
         self.world2cam_mat = np.genfromtxt(pose_file, delimiter=',')
