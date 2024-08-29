@@ -9,4 +9,5 @@ nuscenes-devkit==1.0.8
 protobuf==4.25
 pycocotools==2.0.7
 terminaltables==3.1.10
+trimesh==3.9.0
 waymo-open-dataset-tf-2-11-0==1.5.0

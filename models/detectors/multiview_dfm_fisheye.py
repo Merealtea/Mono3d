@@ -82,7 +82,7 @@ class MultiViewDfMFisheye(DfM):
         # TODO: Nt means the number of frames temporally
         # num_views means the number of views of a frame
         batch_size, _, C_in, H, W = img.shape
-        import pdb; pdb.set_trace()
+    
         num_views = img_metas[0]['num_views']
         num_ref_frames = img_metas[0]['num_ref_frames']
         if num_ref_frames > 0:
