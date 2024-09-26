@@ -35,6 +35,11 @@ class MultiViewDfMFisheye(DfM):
                  transform_depth=True,
                  pretrained=None,
                  vehicle = None,
+                 num_views=4,
+                 num_ref_frames=0,
+                 input_shape=None,
+                 pad_shape=None,
+                 ratio = None,
                  init_cfg=None):
         super().__init__(
             backbone=backbone,
@@ -52,6 +57,8 @@ class MultiViewDfMFisheye(DfM):
             pretrained=pretrained,
             init_cfg=init_cfg)
         self.voxel_size = voxel_size
+        self.num_views = num_views
+        self.num_ref_frames = num_ref_frames
         self.voxel_range = anchor_generator['ranges'][0]
         self.n_voxels = [
             round((self.voxel_range[3] - self.voxel_range[0]) /
@@ -65,6 +72,10 @@ class MultiViewDfMFisheye(DfM):
         self.valid_sample = valid_sample
         self.temporal_aggregate = temporal_aggregate
         self.transform_depth = transform_depth
+
+        self.input_shape = input_shape
+        self.pad_shape = pad_shape
+        self.ratio = ratio
 
         self.cam_models = dict(zip(["left", "right", "front", "back"], 
                                    [CamModel(cam_dir, vehicle, "torch", "cuda:0") for cam_dir in ["left", "right", "front", "back"]]) )
@@ -82,20 +93,18 @@ class MultiViewDfMFisheye(DfM):
         # TODO: Nt means the number of frames temporally
         # num_views means the number of views of a frame
         batch_size, _, C_in, H, W = img.shape
-    
-        num_views = img_metas[0]['num_views']
-        num_ref_frames = img_metas[0]['num_ref_frames']
-        if num_ref_frames > 0:
-            num_frames = num_ref_frames + 1
+        if self.num_ref_frames > 0:
+            num_frames = self.num_ref_frames + 1
         else:
             num_frames = 1
         input_shape = img.shape[-2:]
+   
         # NOTE: input_shape is the largest pad_shape of the batch of images
         for img_meta in img_metas:
             img_meta.update(input_shape=input_shape)
-        if num_ref_frames > 0:
-            cur_imgs = img[:, :num_views].reshape(-1, C_in, H, W)
-            prev_imgs = img[:, num_views:].reshape(-1, C_in, H, W)
+        if self.num_ref_frames > 0:
+            cur_imgs = img[:, :self.num_views].reshape(-1, C_in, H, W)
+            prev_imgs = img[:, self.num_views:].reshape(-1, C_in, H, W)
             cur_feats = self.backbone(cur_imgs)
             cur_feats = self.neck(cur_feats)[0]
             with torch.no_grad():
@@ -115,9 +124,9 @@ class MultiViewDfMFisheye(DfM):
                                            W_feat)
         # transform the feature to voxel & stereo space
         transform_feats = self.feature_transformation(batch_feats, img_metas,
-                                                      num_views, num_frames)
+                                                      self.num_views, num_frames)
         if self.with_depth_head_2d:
-            transform_feats += (batch_feats[:, :num_views], )
+            transform_feats += (batch_feats[:, :self.num_views], )
 
         return transform_feats
 
@@ -142,6 +151,7 @@ class MultiViewDfMFisheye(DfM):
                         points.new_tensor(img_meta['scale_factor']))
             else:
                 img_scale_factor = (1)
+
             img_flip = img_meta['flip'] if 'flip' in img_meta.keys() else False
             img_crop_offset = (
                 points.new_tensor(img_meta['img_crop_offset'])
@@ -356,3 +366,75 @@ class MultiViewDfMFisheye(DfM):
             list[dict]: Predicted 3d boxes.
         """
         raise NotImplementedError
+    
+    def extract_feats_onnx_export(self, img):
+        """
+        Args:
+            img (torch.Tensor): [B, Nv, C_in, H, W]
+            img_metas (list): each element corresponds to a group of images.
+                len(img_metas) == B.
+
+        Returns:
+            torch.Tensor: bev feature with shape [B, C_out, N_y, N_x].
+        """
+        # TODO: Nt means the number of frames temporally
+        # num_views means the number of views of a frame
+        batch_size, _, C_in, H, W = img.shape
+    
+        
+        if self.num_ref_frames > 0:
+            num_frames = self.num_ref_frames + 1
+        else:
+            num_frames = 1
+        input_shape = img.shape[-2:]
+        # NOTE: input_shape is the largest pad_shape of the batch of images
+        img_metas = [{"img_shape": (H, W), 
+                      "ori_shape": self.input_shape,
+                      "pad_shape": (H, W), 
+                      "scale_factor": [1.0, 1.0], 
+                      "flip": False, "img_crop_offset": [0.0, 0.0]}]
+
+        if self.num_ref_frames > 0:
+            cur_imgs = img[:, :self.num_views].reshape(-1, C_in, H, W)
+            prev_imgs = img[:, self.num_views:].reshape(-1, C_in, H, W)
+            cur_feats = self.backbone(cur_imgs)
+            cur_feats = self.neck(cur_feats)[0]
+            with torch.no_grad():
+                prev_feats = self.backbone(prev_imgs)
+                prev_feats = self.neck(prev_feats)[0]
+            _, C_feat, H_feat, W_feat = cur_feats.shape
+            cur_feats = cur_feats.view(batch_size, -1, C_feat, H_feat, W_feat)
+            prev_feats = prev_feats.view(batch_size, -1, C_feat, H_feat, W_feat)
+            batch_feats = torch.cat([cur_feats, prev_feats], dim=1)
+        else:
+            batch_imgs = img.view(-1, C_in, H, W)
+            batch_feats = self.backbone(batch_imgs)
+            # TODO: support SPP module neck
+            batch_feats = self.neck(batch_feats)[0]
+            _, C_feat, H_feat, W_feat = batch_feats.shape
+            batch_feats = batch_feats.view(batch_size, -1, C_feat, H_feat,
+                                           W_feat)
+        # transform the feature to voxel & stereo space
+        transform_feats = self.feature_transformation(batch_feats, img_metas,
+                                                      self.num_views, num_frames)
+        if self.with_depth_head_2d:
+            transform_feats += (batch_feats[:, :self.num_views], )
+
+        return transform_feats
+
+    def onnx_export(self, img, img_metas):
+        # onnx export not including nms
+        feats = self.extract_feat(img, img_metas)
+        # bbox_head takes a list of feature from different levels as input
+        # so need [bev_feat]
+        bev_feat = feats[0]
+        outs = self.bbox_head_3d.onnx_export([bev_feat])
+        """
+        if self.with_depth_head:
+            stereo_feat = feats[1]
+            depth_volumes, _, depth_preds = self.depth_head(stereo_feat)
+        """
+
+        bbox_list = self.bbox_head_3d.get_bboxes(*outs, img_metas)
+        return bbox_list
+        

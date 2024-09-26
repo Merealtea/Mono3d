@@ -2,7 +2,7 @@ model = dict(
     type='MultiViewDfM',
     backbone=dict(
         type='ResNet',
-        depth=101,
+        depth=50,
         num_stages=4,
         out_indices=(0, 1, 2, 3),
         frozen_stages=1,
@@ -11,8 +11,7 @@ model = dict(
         style='pytorch',
         init_cfg=dict(
             type='Pretrained',
-            checkpoint=  # noqa
-            '/mnt/lustre/wangtai/pretrained_models/resnet101-63fe2227.pth'),
+            checkpoint=  ''),
         dcn=dict(type='DCNv2', deform_groups=1, fallback_on_stride=False),
         stage_with_dcn=(False, False, True, True)),
     neck=dict(

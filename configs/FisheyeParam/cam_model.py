@@ -374,7 +374,7 @@ class CamModel:
             points3D = points3D[:, valid]
 
         norm = torch.norm(points3D[:2], dim=0)
-        theta = torch.atan2(points3D[2], norm)
+        theta = torch.atan(points3D[2], norm)
         invnorm = 1.0 / norm
 
         theta_poly = torch.stack([theta ** i for i in range(0, self.length_invpol)])

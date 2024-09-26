@@ -1,24 +1,17 @@
 type : 'MultiViewDfMFisheye'
 vehicle : 'Rock'
+num_views : 4
+num_ref_frames : 0
 backbone : 
     type : 'ResNet'
-    depth : 101
+    depth : 50
     num_stages : 4
     out_indices : [0, 1, 2, 3]
     frozen_stages : 1
-    norm_cfg : 
-      type : 'BN' 
-      requires_grad : False
     norm_eval : True
-    style : 'pytorch'
     init_cfg : 
       type : 'Pretrained' 
-      checkpoint : '/data/cxy/Mono3d/ckpt/PGDwithFcos3dhead/epoch_40_backbone.pth'
-    dcn : 
-      type : 'DCNv2' 
-      deform_groups : 1 
-      fallback_on_stride : False
-    stage_with_dcn : [False, False, True, True]
+      checkpoint : 'torchvision://resnet50'
 neck : 
     type : 'FPN'
     in_channels : [256, 512, 1024, 2048]
@@ -41,7 +34,7 @@ neck_3d :
     num_frames : 1  # num_frames = num_ref_frames+1
 valid_sample : True
 temporal_aggregate : 'concat'
-voxel_size : [0.1, 0.1, 0.25]  # n_voxels : [240, 300, 12]
+voxel_size : [0.25, 0.25, 0.25]  # n_voxels : [240, 300, 12]
 anchor_generator : 
     type : 'AlignedAnchor3DRangeGenerator'
     ranges : &range [[-10.0, -10.0, 0, 10.0, 10.0, 3]]

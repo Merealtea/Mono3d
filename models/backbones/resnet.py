@@ -302,7 +302,6 @@ class Bottleneck(BaseModule):
         return out
 
 
-@BACKBONES.register_module()
 class ResNet(BaseModule):
     """ResNet backbone.
 
@@ -657,7 +656,7 @@ class ResNet(BaseModule):
                     m.eval()
 
 
-@BACKBONES.register_module()
+# @BACKBONES.register_module()
 class ResNetV1d(ResNet):
     r"""ResNetV1d variant described in `Bag of Tricks
     <https://arxiv.org/pdf/1812.01187.pdf>`_.

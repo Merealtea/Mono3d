@@ -3,13 +3,14 @@ import numpy as np
 import torch
 from mmcv.runner import BaseModule, force_fp32
 from torch import nn as nn
-
+from core.bbox.structures.lidar_box3d import LiDARInstance3DBoxes
 from core import (PseudoSampler, box3d_multiclass_nms, limit_period,
                           xywhr2xyxyr)
 from core import (build_assigner, build_bbox_coder,
                         build_prior_generator, build_sampler, multi_apply)
 from ..builder import HEADS, build_loss
 from .train_mixins import AnchorTrainMixin
+from core import bbox3d2result
 
 
 @HEADS.register_module()
@@ -156,6 +157,23 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
         if self.use_direction_classifier:
             dir_cls_preds = self.conv_dir_cls(x)
         return cls_score, bbox_pred, dir_cls_preds
+    
+    def onnx_export(self, x):
+        """Forward function on a single-scale feature map for onnx.
+
+        Args:
+            x (torch.Tensor): Input features.
+
+        Returns:
+            tuple[torch.Tensor]: Contain score of each class, bbox
+                regression and direction classification predictions.
+        """
+        cls_score = self.conv_cls(x)
+        bbox_pred = self.conv_reg(x)
+        dir_cls_preds = None
+        if self.use_direction_classifier:
+            dir_cls_preds = self.conv_dir_cls(x)
+        return [cls_score], [bbox_pred], [dir_cls_preds]
 
     def forward(self, feats):
         """Forward pass.
@@ -499,7 +517,7 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
             # Add a dummy background class to the front when using sigmoid
             padding = mlvl_scores.new_zeros(mlvl_scores.shape[0], 1)
             mlvl_scores = torch.cat([mlvl_scores, padding], dim=1)
-
+        
         score_thr = cfg.get('score_thr', 0)
         results = box3d_multiclass_nms(mlvl_bboxes, mlvl_bboxes_for_nms,
                                        mlvl_scores, score_thr, cfg["max_num"],
@@ -513,3 +531,110 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
                 np.pi * dir_scores.to(bboxes.dtype))
         bboxes = input_meta['box_type_3d'](bboxes, box_dim=self.box_code_size)
         return bboxes, scores, labels
+
+
+    def get_bboxes_onnx_export(self,
+                          cls_scores,
+                          bbox_preds,
+                          dir_cls_preds,
+                          mlvl_anchors,
+                          cfg=None,
+                          rescale=False):
+        """Get bboxes of single branch.
+
+        Args:
+            cls_scores (torch.Tensor): Class score in single batch.
+            bbox_preds (torch.Tensor): Bbox prediction in single batch.
+            dir_cls_preds (torch.Tensor): Predictions of direction class
+                in single batch.
+            mlvl_anchors (List[torch.Tensor]): Multi-level anchors
+                in single batch.
+            input_meta (list[dict]): Contain pcd and img's meta info.
+            cfg (:obj:`ConfigDict`): Training or testing config.
+            rescale (list[torch.Tensor]): whether th rescale bbox.
+
+        Returns:
+            tuple: Contain predictions of single batch.
+
+                - bboxes (:obj:`BaseInstance3DBoxes`): Predicted 3d bboxes.
+                - scores (torch.Tensor): Class score of each bbox.
+                - labels (torch.Tensor): Label of each bbox.
+        """
+        cfg = self.test_cfg if cfg is None else cfg
+        assert len(cls_scores) == len(bbox_preds) == len(mlvl_anchors)
+        mlvl_bboxes = []
+        mlvl_scores = []
+        mlvl_dir_scores = []
+        for cls_score, bbox_pred, dir_cls_pred, anchors in zip(
+                cls_scores, bbox_preds, dir_cls_preds, mlvl_anchors):
+            assert cls_score.size()[-2:] == bbox_pred.size()[-2:]
+            assert cls_score.size()[-2:] == dir_cls_pred.size()[-2:]
+            dir_cls_pred = dir_cls_pred.permute(1, 2, 0).reshape(-1, 2)
+            dir_cls_score = torch.max(dir_cls_pred, dim=-1)[1]
+
+            cls_score = cls_score.permute(1, 2,
+                                          0).reshape(-1, self.num_classes)
+            if self.use_sigmoid_cls:
+                scores = cls_score.sigmoid()
+            else:
+                scores = cls_score.softmax(-1)
+            bbox_pred = bbox_pred.permute(1, 2,
+                                          0).reshape(-1, self.box_code_size)
+
+            nms_pre = cfg.get('nms_pre', -1)
+            if nms_pre > 0 and scores.shape[0] > nms_pre:
+                if self.use_sigmoid_cls:
+                    max_scores, _ = scores.max(dim=1)
+                else:
+                    max_scores, _ = scores[:, :-1].max(dim=1)
+                _, topk_inds = max_scores.topk(nms_pre)
+                anchors = anchors[topk_inds, :]
+                bbox_pred = bbox_pred[topk_inds, :]
+                scores = scores[topk_inds, :]
+                dir_cls_score = dir_cls_score[topk_inds]
+
+            bboxes = self.bbox_coder.decode(anchors, bbox_pred)
+            mlvl_bboxes.append(bboxes)
+            mlvl_scores.append(scores)
+            mlvl_dir_scores.append(dir_cls_score)
+
+        mlvl_bboxes = torch.cat(mlvl_bboxes)
+        mlvl_scores = torch.cat(mlvl_scores)
+        mlvl_dir_scores = torch.cat(mlvl_dir_scores)
+
+        if self.use_sigmoid_cls:
+            # Add a dummy background class to the front when using sigmoid
+            padding = mlvl_scores.new_zeros(mlvl_scores.shape[0], 1)
+            mlvl_scores = torch.cat([mlvl_scores, padding], dim=1)
+
+        return torch.cat([mlvl_bboxes, mlvl_scores, mlvl_dir_scores[..., None]], dim = 1)
+    
+    def nms_for_bboxes(self, mlvl_bboxes, mlvl_scores, mlvl_dir_scores, cfg):
+        """NMS for bboxes.
+            cfg (dict): Config dict.
+                score_thr (float): Score threshold to filter bboxes.
+                max_num (int): Maximum number of selected bboxes.
+                use_rotate_nms (bool): Whether to use rotate nms.
+        """
+        
+        mlvl_bboxes_for_nms = xywhr2xyxyr(LiDARInstance3DBoxes(
+            mlvl_bboxes, box_dim=self.box_code_size).bev)
+        
+        score_thr = cfg.get('score_thr', 0)
+        results = box3d_multiclass_nms(mlvl_bboxes, mlvl_bboxes_for_nms,
+                                       mlvl_scores, score_thr, cfg["max_num"],
+                                       cfg, mlvl_dir_scores)
+        bboxes, scores, labels, dir_scores = results
+        if bboxes.shape[0] > 0:
+            dir_rot = limit_period(bboxes[..., 6] - self.dir_offset,
+                                   self.dir_limit_offset, np.pi)
+            bboxes[..., 6] = (
+                dir_rot + self.dir_offset +
+                np.pi * dir_scores.to(bboxes.dtype))
+        bboxes = LiDARInstance3DBoxes(bboxes, box_dim=self.box_code_size)
+ 
+        bbox_results = [
+                bbox3d2result(det_bboxes, det_scores, det_labels)
+                for det_bboxes, det_scores, det_labels in zip(bboxes, scores, labels)
+            ]
+        return bbox_results

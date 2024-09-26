@@ -10,6 +10,86 @@ from core.bbox.structures import (get_proj_mat_by_coord_type,
 from ..builder import FUSION_LAYERS
 from . import apply_3d_transformation
 
+def grid_sample(input, grid, mode='bilinear', padding_mode='zeros', align_corners=None):
+    # Now we will only implement the bilinear mode and nearesr mode with zero pad 
+    n, c, ih, iw = input.shape
+    gn, gh, gw, _ = grid.shape
+
+    assert n == gn, "The batch size of input and grid should be same"
+
+    x = grid[:, :, :, 0]
+    y = grid[:, :, :, 1]
+
+    if align_corners:
+        x = ((x + 1) / 2) * (iw - 1)
+        y = ((y + 1) / 2) * (ih - 1)
+    else:
+        x = ((x + 1) * iw - 1) / 2
+        y = ((y + 1) * ih - 1) / 2
+
+    x = x.contiguous().view(n, -1)
+    y = y.contiguous().view(n, -1)
+    
+    # Apply default for grid_sample function zero padding
+    if padding_mode == 'zeros':
+        im_padded = F.pad(input, pad=[1, 1, 1, 1], mode='constant', value=0)
+        padded_h = ih + 2
+        padded_w = iw + 2
+    else:
+        pass
+    x0 = torch.floor(x)
+    y0 = torch.floor(y)
+    x1 = x0 + 1
+    y1 = y0 + 1
+
+    if mode == 'bilinear':
+        
+        wa = ((x1 - x) * (y1 - y)).unsqueeze(1)
+        wb = ((x1 - x) * (y - y0)).unsqueeze(1)
+        wc = ((x - x0) * (y1 - y)).unsqueeze(1)
+        wd = ((x - x0) * (y - y0)).unsqueeze(1)
+
+        # save points positions after padding
+        x0, x1, y0, y1 = x0 + 1, x1 + 1, y0 + 1, y1 + 1
+
+        # Clip coordinates to padded image size
+        x0 = x0.clamp(0, padded_w - 1)
+        x1 = x1.clamp(0, padded_w - 1)
+        y0 = y0.clamp(0, padded_h - 1)
+        y1 = y1.clamp(0, padded_h - 1)
+
+        im_padded = im_padded.view(n, c, -1)
+        x0_y0 = (x0 + y0 * padded_w).unsqueeze(1).expand(-1, c, -1)
+        x0_y1 = (x0 + y1 * padded_w).unsqueeze(1).expand(-1, c, -1)
+        x1_y0 = (x1 + y0 * padded_w).unsqueeze(1).expand(-1, c, -1)
+        x1_y1 = (x1 + y1 * padded_w).unsqueeze(1).expand(-1, c, -1)
+
+        Ia = torch.gather(im_padded, 2, x0_y0)
+        Ib = torch.gather(im_padded, 2, x0_y1)
+        Ic = torch.gather(im_padded, 2, x1_y0)
+        Id = torch.gather(im_padded, 2, x1_y1)
+
+        return (Ia * wa + Ib * wb + Ic * wc + Id * wd).reshape(n, c, gh, gw).to(im.device)
+
+
+    elif mode =='nearest':
+        x_l, x_r = x - x0, x1 - x
+        y_d, y_t = y - y0, y1 - y
+        x_idx = torch.where(x_l < x_r, x0, x1) + 1
+        y_idx = torch.where(y_d < y_t, y0, y1) + 1
+
+        x_idx = torch.clamp(x_idx, 0, padded_w-1)
+        y_idx = torch.clamp(y_idx, 0, padded_h-1)
+
+        im_padded = im_padded.reshape((-1,))
+        idx = torch.zeros_like(x_idx)[:,None,:].expand(-1, c, -1) 
+        channel_idx = torch.arange(c)[None, :, None].expand_as(idx).to(input.device)
+        batch_idx = torch.arange(n)[:, None, None].expand_as(idx).to(input.device)
+        idx = (x_idx + y_idx * padded_w + channel_idx * padded_w * padded_h + batch_idx * padded_w * padded_h * c).long()
+        idx = idx.reshape((-1,))
+
+        sample_feature = im_padded[idx]
+        return sample_feature.reshape(n, c, gh, gw)
 
 
 def point_sample(img_meta,
@@ -169,12 +249,6 @@ def point_sample_fisheye(img_meta,
     # grid sample, the valid grid range should be in [-1,1]
     coor_x, coor_y = torch.split(img_coors, 1, dim=1)  # each is Nx1
 
-    if img_flip:
-        # by default we take it as horizontal flip
-        # use img_shape before padding for flip
-        ori_h, ori_w = img_shape
-        coor_x = ori_w - coor_x
-
     h, w = img_pad_shape
     norm_coor_y = coor_y / h * 2 - 1
     norm_coor_x = coor_x / w * 2 - 1
@@ -183,17 +257,26 @@ def point_sample_fisheye(img_meta,
 
     # align_corner=True provides higher performance
     mode = 'bilinear' if aligned else 'nearest'
-    point_features = F.grid_sample(
+    # point_features = F.grid_sample(
+    #     img_features,
+    #     grid,
+    #     mode=mode,
+    #     padding_mode=padding_mode,
+    #     align_corners=align_corners)  # 1xCx1xN feats
+    
+    point_features = grid_sample(
         img_features,
         grid,
-        mode=mode,
+        mode,
         padding_mode=padding_mode,
-        align_corners=align_corners)  # 1xCx1xN feats
+        align_corners=align_corners
+    )
 
+    ori_h, ori_w = img_shape
     if valid_flag:
         # (N, )
-        valid = (coor_x.squeeze() < w) & (coor_x.squeeze() > 0) & (
-            coor_y.squeeze() < h) & (coor_y.squeeze() > 0) & (
+        valid = (coor_x.squeeze() < ori_w) & (coor_x.squeeze() > 0) & (
+            coor_y.squeeze() < ori_h) & (coor_y.squeeze() > 0) & (
                 depths > 0)
         valid_features = point_features.squeeze().t()
         valid_features[~valid] = 0
