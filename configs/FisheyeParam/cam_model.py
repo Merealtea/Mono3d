@@ -360,10 +360,10 @@ class CamModel:
 
     def _cam2image_torch(self, points3D, filter_points):
         """ Projects 3D points on the image and returns the pixel coordinates. """
-        points3D = points3D.T
+        points3D = points3D.transpose(0, 1)
 
         n = torch.norm(points3D, dim=1)
-        x, y, z = points3D.T / n
+        x, y, z = points3D.transpose(0, 1) / n
 
         # 计算投影坐标
         points3D = torch.matmul(self.r1, torch.stack((x, y, z)))
@@ -374,8 +374,8 @@ class CamModel:
             points3D = points3D[:, valid]
 
         norm = torch.norm(points3D[:2], dim=0)
-        theta = torch.atan(points3D[2], norm)
-        invnorm = 1.0 / norm
+        theta = torch.atan(points3D[2] / (norm + 1e-8))
+        invnorm = 1.0 / (norm + 1e-8)
 
         theta_poly = torch.stack([theta ** i for i in range(0, self.length_invpol)])
         rho = torch.matmul(self.invpol, theta_poly)
@@ -408,7 +408,7 @@ class CamModel:
             points = np.vstack([points3D, np.ones(points3D.shape[1])])
             return np.dot(self.world2cam_mat, points)[0:3, :]
         elif self.version == "torch":
-            points = torch.vstack([points3D, torch.ones(points3D.shape[1]).to(self.device)])
+            points = torch.cat([points3D, torch.ones((1, points3D.shape[1])).to(self.device)])
             return torch.matmul(self.world2cam_mat, points)[0:3, :]
         else:
             raise ValueError("version must be one of 'numpy', 'torch'. ")

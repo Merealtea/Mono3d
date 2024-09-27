@@ -35,11 +35,9 @@ class MultiViewDfMFisheye(DfM):
                  transform_depth=True,
                  pretrained=None,
                  vehicle = None,
+                 input_shape = None,
                  num_views=4,
                  num_ref_frames=0,
-                 input_shape=None,
-                 pad_shape=None,
-                 ratio = None,
                  init_cfg=None):
         super().__init__(
             backbone=backbone,
@@ -74,8 +72,8 @@ class MultiViewDfMFisheye(DfM):
         self.transform_depth = transform_depth
 
         self.input_shape = input_shape
-        self.pad_shape = pad_shape
-        self.ratio = ratio
+        # self.pad_shape = pad_shape
+        # self.ratio = ratio
 
         self.cam_models = dict(zip(["left", "right", "front", "back"], 
                                    [CamModel(cam_dir, vehicle, "torch", "cuda:0") for cam_dir in ["left", "right", "front", "back"]]) )
@@ -192,8 +190,12 @@ class MultiViewDfMFisheye(DfM):
                 if self.valid_sample:
                     valid_nums = torch.stack(
                         valid_flags, dim=0).sum(0)  # (N, )
+                    
                     volume = torch.stack(volume, dim=0).sum(0)
                     valid_mask = valid_nums > 0
+
+                    # expand valid_mask to the same shape as volume
+                    valid_mask = valid_mask[:, None].expand_as(volume)
                     volume[~valid_mask] = 0
                     frame_valid_nums.append(valid_nums)
                 else:
@@ -212,6 +214,9 @@ class MultiViewDfMFisheye(DfM):
                     frame_valid_nums = torch.stack(frame_valid_nums, dim=1)
                     frame_volume = torch.stack(frame_volume, dim=1)
                     frame_valid_mask = frame_valid_nums > 0
+                    frame_valid_mask = frame_valid_mask[:, :, None].expand_as(
+                        frame_volume)
+                    # raise Exception("valid_nums shape is: ", (frame_volume.shape, frame_valid_nums.shape))
                     frame_volume[~frame_valid_mask] = 0
                     frame_volume = (frame_volume / torch.clamp(
                         frame_valid_nums[:, :, None], min=1)).flatten(
@@ -386,13 +391,15 @@ class MultiViewDfMFisheye(DfM):
             num_frames = self.num_ref_frames + 1
         else:
             num_frames = 1
-        input_shape = img.shape[-2:]
+        input_shape = self.input_shape
         # NOTE: input_shape is the largest pad_shape of the batch of images
-        img_metas = [{"img_shape": (H, W), 
-                      "ori_shape": self.input_shape,
+        img_metas = [{"img_shape": [[H, W]] * 4, 
+                      "input_shape": self.input_shape,
                       "pad_shape": (H, W), 
-                      "scale_factor": [1.0, 1.0], 
-                      "flip": False, "img_crop_offset": [0.0, 0.0]}]
+                      "scale_factor": [0.5, 0.5], 
+                      "flip": False, 
+                      "img_crop_offset": [0.0, 0.0],
+                      "direction": ['front', 'back', 'left', 'right']}]
 
         if self.num_ref_frames > 0:
             cur_imgs = img[:, :self.num_views].reshape(-1, C_in, H, W)
@@ -422,19 +429,18 @@ class MultiViewDfMFisheye(DfM):
 
         return transform_feats
 
-    def onnx_export(self, img, img_metas):
+    def onnx_export(self, img):
         # onnx export not including nms
-        feats = self.extract_feat(img, img_metas)
+        feats = self.extract_feats_onnx_export(img)
         # bbox_head takes a list of feature from different levels as input
         # so need [bev_feat]
         bev_feat = feats[0]
-        outs = self.bbox_head_3d.onnx_export([bev_feat])
+        outs = self.bbox_head_3d.onnx_export(bev_feat)
         """
         if self.with_depth_head:
             stereo_feat = feats[1]
             depth_volumes, _, depth_preds = self.depth_head(stereo_feat)
         """
-
-        bbox_list = self.bbox_head_3d.get_bboxes(*outs, img_metas)
+        bbox_list = self.bbox_head_3d.get_bboxes_onnx_export(*outs)
         return bbox_list
         

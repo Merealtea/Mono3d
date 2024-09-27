@@ -536,10 +536,7 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
     def get_bboxes_onnx_export(self,
                           cls_scores,
                           bbox_preds,
-                          dir_cls_preds,
-                          mlvl_anchors,
-                          cfg=None,
-                          rescale=False):
+                          dir_cls_preds):
         """Get bboxes of single branch.
 
         Args:
@@ -560,11 +557,44 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
                 - scores (torch.Tensor): Class score of each bbox.
                 - labels (torch.Tensor): Label of each bbox.
         """
-        cfg = self.test_cfg if cfg is None else cfg
+        assert len(cls_scores) == len(bbox_preds)
+        assert len(cls_scores) == len(dir_cls_preds)
+        num_levels = len(cls_scores)
+        featmap_sizes = [cls_scores[i].shape[-2:] for i in range(num_levels)]
+        device = cls_scores[0].device
+        mlvl_anchors = self.anchor_generator.grid_anchors(
+            featmap_sizes, device=device)
+        mlvl_anchors = [
+            anchor.reshape(-1, self.box_code_size) for anchor in mlvl_anchors
+        ]
+
+        result_list = []
+        for img_id in range(1):
+            cls_score_list = [
+                cls_scores[i][img_id].detach() for i in range(num_levels)
+            ]
+            bbox_pred_list = [
+                bbox_preds[i][img_id].detach() for i in range(num_levels)
+            ]
+            dir_cls_pred_list = [
+                dir_cls_preds[i][img_id].detach() for i in range(num_levels)
+            ]
+
+            proposals = self.get_bboxes_single_onnx_export(cls_score_list, bbox_pred_list,
+                                               dir_cls_pred_list, mlvl_anchors)
+            result_list.append(proposals)
+        return result_list
+
+    def get_bboxes_single_onnx_export(self,
+                            cls_scores,
+                            bbox_preds,
+                            dir_cls_preds,
+                            mlvl_anchors):
         assert len(cls_scores) == len(bbox_preds) == len(mlvl_anchors)
         mlvl_bboxes = []
         mlvl_scores = []
         mlvl_dir_scores = []
+        cfg = self.test_cfg 
         for cls_score, bbox_pred, dir_cls_pred, anchors in zip(
                 cls_scores, bbox_preds, dir_cls_preds, mlvl_anchors):
             assert cls_score.size()[-2:] == bbox_pred.size()[-2:]

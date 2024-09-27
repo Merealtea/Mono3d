@@ -233,13 +233,13 @@ def point_sample_fisheye(img_meta,
         points, coord_type, img_meta, reverse=True)
     # project points to camera coordinate
     if valid_flag:
-        proj_pts = camera_model.world2cam(points.T) 
+        proj_pts = camera_model.world2cam(points.transpose(0,1)) 
         depths = proj_pts[0, ...]
-        pts_2d = camera_model.cam2image(proj_pts, False).T
+        pts_2d = camera_model.cam2image(proj_pts, False).transpose(0,1)
         # points_cam2img(points, proj_mat, with_depth=True)
         
     else:
-        pts_2d = camera_model.cam2image(points.T, False).T
+        pts_2d = camera_model.cam2image(points.transpose(0,1), False).transpose(0,1)
 
     # img transformation: scale -> crop -> flip
     # the image is resized by img_scale_factor
@@ -279,7 +279,10 @@ def point_sample_fisheye(img_meta,
             coor_y.squeeze() < ori_h) & (coor_y.squeeze() > 0) & (
                 depths > 0)
         valid_features = point_features.squeeze().t()
+        # expand the valid flag to the feature dimension
+        valid = valid.unsqueeze(1).expand_as(valid_features)
         valid_features[~valid] = 0
+        valid = valid[:, 0]
         return valid_features, valid  # (N, C), (N,)
 
     return point_features.squeeze().t()

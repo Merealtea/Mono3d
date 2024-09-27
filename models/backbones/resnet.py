@@ -8,7 +8,7 @@ from mmcv.runner import BaseModule
 from torch.nn.modules.batchnorm import _BatchNorm
 
 from ..builder import BACKBONES
-from ..utils import ResLayer
+# from ..utils import ResLayer
 
 
 class BasicBlock(BaseModule):
