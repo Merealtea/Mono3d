@@ -374,70 +374,14 @@ class MultiViewDfMFisheye(DfM):
         """
         raise NotImplementedError
     
-    def extract_feats_onnx_export(self, img):
-        """
-        Args:
-            img (torch.Tensor): [B, Nv, C_in, H, W]
-            img_metas (list): each element corresponds to a group of images.
-                len(img_metas) == B.
 
-        Returns:
-            torch.Tensor: bev feature with shape [B, C_out, N_y, N_x].
-        """
-        # TODO: Nt means the number of frames temporally
-        # num_views means the number of views of a frame
-        batch_size, _, C_in, H, W = img.shape
-    
-        
-        if self.num_ref_frames > 0:
-            num_frames = self.num_ref_frames + 1
-        else:
-            num_frames = 1
-        input_shape = self.input_shape
-        # NOTE: input_shape is the largest pad_shape of the batch of images
-        img_metas = [{"img_shape": [[H, W]] * 4, 
-                      "input_shape": self.input_shape,
-                      "pad_shape": (H, W), 
-                      "scale_factor": [0.5, 0.5], 
-                      "flip": False, 
-                      "img_crop_offset": [0.0, 0.0],
-                      "direction": ['front', 'back', 'left', 'right']}]
-
-        if self.num_ref_frames > 0:
-            cur_imgs = img[:, :self.num_views].reshape(-1, C_in, H, W)
-            prev_imgs = img[:, self.num_views:].reshape(-1, C_in, H, W)
-            cur_feats = self.backbone(cur_imgs)
-            cur_feats = self.neck(cur_feats)[0]
-            with torch.no_grad():
-                prev_feats = self.backbone(prev_imgs)
-                prev_feats = self.neck(prev_feats)[0]
-            _, C_feat, H_feat, W_feat = cur_feats.shape
-            cur_feats = cur_feats.view(batch_size, -1, C_feat, H_feat, W_feat)
-            prev_feats = prev_feats.view(batch_size, -1, C_feat, H_feat, W_feat)
-            batch_feats = torch.cat([cur_feats, prev_feats], dim=1)
-        else:
-            batch_imgs = img.view(-1, C_in, H, W)
-            batch_feats = self.backbone(batch_imgs)
-            # TODO: support SPP module neck
-            batch_feats = self.neck(batch_feats)[0]
-            _, C_feat, H_feat, W_feat = batch_feats.shape
-            batch_feats = batch_feats.view(batch_size, -1, C_feat, H_feat,
-                                           W_feat)
-        # transform the feature to voxel & stereo space
-        transform_feats = self.feature_transformation(batch_feats, img_metas,
-                                                      self.num_views, num_frames)
-        if self.with_depth_head_2d:
-            transform_feats += (batch_feats[:, :self.num_views], )
-
-        return transform_feats
-
-    def onnx_export(self, img):
+    def onnx_export(self, img, img_metas, **kwargs):
         # onnx export not including nms
-        feats = self.extract_feats_onnx_export(img)
+        feats = self.extract_feat(img, img_metas)
         # bbox_head takes a list of feature from different levels as input
         # so need [bev_feat]
         bev_feat = feats[0]
-        outs = self.bbox_head_3d.onnx_export(bev_feat)
+        outs = self.bbox_head_3d([bev_feat])
         """
         if self.with_depth_head:
             stereo_feat = feats[1]

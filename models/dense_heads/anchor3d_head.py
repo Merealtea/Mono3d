@@ -3,7 +3,6 @@ import numpy as np
 import torch
 from mmcv.runner import BaseModule, force_fp32
 from torch import nn as nn
-from core.bbox.structures.lidar_box3d import LiDARInstance3DBoxes
 from core import (PseudoSampler, box3d_multiclass_nms, limit_period,
                           xywhr2xyxyr)
 from core import (build_assigner, build_bbox_coder,
@@ -158,22 +157,22 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
             dir_cls_preds = self.conv_dir_cls(x)
         return cls_score, bbox_pred, dir_cls_preds
     
-    def onnx_export(self, x):
-        """Forward function on a single-scale feature map for onnx.
+    # def onnx_export(self, x):
+    #     """Forward function on a single-scale feature map for onnx.
 
-        Args:
-            x (torch.Tensor): Input features.
+    #     Args:
+    #         x (torch.Tensor): Input features.
 
-        Returns:
-            tuple[torch.Tensor]: Contain score of each class, bbox
-                regression and direction classification predictions.
-        """
-        cls_score = self.conv_cls(x)
-        bbox_pred = self.conv_reg(x)
-        dir_cls_preds = None
-        if self.use_direction_classifier:
-            dir_cls_preds = self.conv_dir_cls(x)
-        return [cls_score], [bbox_pred], [dir_cls_preds]
+    #     Returns:
+    #         tuple[torch.Tensor]: Contain score of each class, bbox
+    #             regression and direction classification predictions.
+    #     """
+    #     cls_score = self.conv_cls(x)
+    #     bbox_pred = self.conv_reg(x)
+    #     dir_cls_preds = None
+    #     if self.use_direction_classifier:
+    #         dir_cls_preds = self.conv_dir_cls(x)
+    #     return [cls_score], [bbox_pred], [dir_cls_preds]
 
     def forward(self, feats):
         """Forward pass.
