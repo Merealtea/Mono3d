@@ -273,6 +273,7 @@ def point_sample_fisheye(img_meta,
     )
 
     ori_h, ori_w = img_shape
+
     if valid_flag:
         # (N, )
         valid = (coor_x.squeeze() < ori_w) & (coor_x.squeeze() > 0) & (

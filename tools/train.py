@@ -1,8 +1,9 @@
 import argparse
 import os
 from os import path 
+abs_path = path.abspath(__file__)
 import sys
-sys.path.append('/data/cxy/Mono3d')
+sys.path.append(abs_path.split("tools")[0])
 
 import torch
 import numpy as np

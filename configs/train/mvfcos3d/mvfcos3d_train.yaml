@@ -1,6 +1,6 @@
-model_config : /data/cxy/Mono3d/configs/models/mv_dfm.yaml
-dataset_config : /data/cxy/Mono3d/configs/datasets/custom-mv3d.yaml
-data_root : '/data/cxy/Mono3d/data/2024-05-12-12-58-18'
+model_config : /mnt/pool1/cxy/Mono3d/configs/models/mv_dfm_rock.yaml
+dataset_config : /mnt/pool1/cxy/Mono3d/configs/datasets/custom-mv3d.yaml
+data_root : /mnt/pool1/cxy/Mono3d/data/2024-07-06-19-40-42
 save_path : ./ckpt/
 annotation_prefix : annotations
 image_prefix : images
