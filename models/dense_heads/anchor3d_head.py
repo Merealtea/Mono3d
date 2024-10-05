@@ -638,33 +638,3 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
             mlvl_scores = torch.cat([mlvl_scores, padding], dim=1)
 
         return torch.cat([mlvl_bboxes, mlvl_scores, mlvl_dir_scores[..., None]], dim = 1)
-    
-    def nms_for_bboxes(self, mlvl_bboxes, mlvl_scores, mlvl_dir_scores, cfg):
-        """NMS for bboxes.
-            cfg (dict): Config dict.
-                score_thr (float): Score threshold to filter bboxes.
-                max_num (int): Maximum number of selected bboxes.
-                use_rotate_nms (bool): Whether to use rotate nms.
-        """
-        
-        mlvl_bboxes_for_nms = xywhr2xyxyr(LiDARInstance3DBoxes(
-            mlvl_bboxes, box_dim=self.box_code_size).bev)
-        
-        score_thr = cfg.get('score_thr', 0)
-        results = box3d_multiclass_nms(mlvl_bboxes, mlvl_bboxes_for_nms,
-                                       mlvl_scores, score_thr, cfg["max_num"],
-                                       cfg, mlvl_dir_scores)
-        bboxes, scores, labels, dir_scores = results
-        if bboxes.shape[0] > 0:
-            dir_rot = limit_period(bboxes[..., 6] - self.dir_offset,
-                                   self.dir_limit_offset, np.pi)
-            bboxes[..., 6] = (
-                dir_rot + self.dir_offset +
-                np.pi * dir_scores.to(bboxes.dtype))
-        bboxes = LiDARInstance3DBoxes(bboxes, box_dim=self.box_code_size)
- 
-        bbox_results = [
-                bbox3d2result(det_bboxes, det_scores, det_labels)
-                for det_bboxes, det_scores, det_labels in zip(bboxes, scores, labels)
-            ]
-        return bbox_results

@@ -9,6 +9,8 @@ from ..fusion_layers.point_fusion import (point_sample_fisheye,
 from ..builder import DETECTORS
 from .dfm import DfM
 from configs.FisheyeParam import CamModel
+from core.bbox.structures.lidar_box3d import LiDARInstance3DBoxes
+from core import xywhr2xyxyr, box3d_multiclass_nms, limit_period
 
 
 @DETECTORS.register_module()
@@ -443,4 +445,45 @@ class MultiViewDfMFisheye(DfM):
         """
         bbox_list = self.bbox_head_3d.get_bboxes_onnx_export(*outs)
         return bbox_list
+    
+    @staticmethod
+    def nms_for_bboxes(prediction_array,
+                        box_code_size = 7,
+                        max_num=100,
+                        score_thr=0.0, 
+                        dir_offset=0,
+                        dir_limit_offset=0,
+                        cfg={}):
+        """NMS for bboxes.
+            cfg (dict): Config dict.
+                score_thr (float): Score threshold to filter bboxes.
+                max_num (int): Maximum number of selected bboxes.
+                use_rotate_nms (bool): Whether to use rotate nms.
+        """
+        prediction_array = torch.tensor(prediction_array).reshape(-1, 10)
+        mlvl_bboxes, mlvl_scores, mlvl_dir_scores = \
+            prediction_array[:, :7],\
+                  prediction_array[:, 7:9],\
+                      prediction_array[:, 9]
+        cfg['use_rotate_nms'] = False
+        cfg['nms_thr'] = 0.5
+        mlvl_bboxes_for_nms = xywhr2xyxyr(LiDARInstance3DBoxes(
+            mlvl_bboxes, box_dim=box_code_size).bev)
         
+        results = box3d_multiclass_nms(mlvl_bboxes, mlvl_bboxes_for_nms,
+                                       mlvl_scores, score_thr, max_num,
+                                       cfg, mlvl_dir_scores)
+        bboxes, scores, labels, dir_scores = results
+        if bboxes.shape[0] > 0:
+            dir_rot = limit_period(bboxes[..., 6] - dir_offset,
+                                   dir_limit_offset, np.pi)
+            bboxes[..., 6] = (
+                dir_rot + dir_offset +
+                np.pi * dir_scores.to(bboxes.dtype))
+        bboxes = LiDARInstance3DBoxes(bboxes, box_dim=box_code_size)
+ 
+        bbox_results = [
+                bbox3d2result(det_bboxes, det_scores, det_labels)
+                for det_bboxes, det_scores, det_labels in zip(bboxes, scores, labels)
+            ]
+        return bbox_results
