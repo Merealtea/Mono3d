@@ -76,12 +76,12 @@ def infer(engine, context, input_dict):
 
 class TRTModel:
     def __init__(self, engine_file_path):
-        self.engine = self.load_engine(engine_file_path)
-        self.context = self.create_execution_context(self.engine)
+        self.engine = load_engine(engine_file_path)
+        self.context = create_execution_context(self.engine)
 
     def __call__(self, input_tesor, img_metas, return_loss):
         input_dict = {'input': input_tesor, 'img_metas': img_metas, 'return_loss': return_loss}
-        output = self.infer(self.engine, self.context, input_dict)
+        output = infer(self.engine, self.context, input_dict)
         bbox_res = MultiViewDfMFisheye.nms_for_bboxes(output[0])
         return bbox_res
 
