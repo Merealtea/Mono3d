@@ -62,7 +62,7 @@ def infer(engine, context, input_dict):
     cuda.memcpy_htod_async(inputs[0][1], inputs[0][0], stream)
 
     # 执行推理
-    context.execute_v2(bindings)
+    context.execute_async_v2(bindings, stream.handle)
 
     # 将输出数据拷贝回主机
     cuda.memcpy_dtoh_async(outputs[0][0], outputs[0][1], stream)
@@ -103,6 +103,6 @@ if __name__ == "__main__":
     start = time.time()
     output = infer(engine, context, input_dict)
     bbox_res = MultiViewDfMFisheye.nms_for_bboxes(output[0])
-    print("Inference Output: ", output)
+    print("Inference Output: ", bbox_res)
     # print("Inference Output Shape: ", output.shape)
     print("Inference Time: ", time.time() - start)

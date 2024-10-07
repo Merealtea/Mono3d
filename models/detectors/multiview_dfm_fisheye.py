@@ -145,10 +145,10 @@ class MultiViewDfMFisheye(DfM):
                         img_meta['scale_factor'],
                         np.ndarray) and len(img_meta['scale_factor']) >= 2:
                     img_scale_factor = (
-                        points.new_tensor(img_meta['scale_factor'][:2]))
+                        points.new_tensor(img_meta['scale_factor'][:2])).to(points.device)
                 else:
                     img_scale_factor = (
-                        points.new_tensor(img_meta['scale_factor']))
+                        points.new_tensor(img_meta['scale_factor'])).to(points.device)
             else:
                 img_scale_factor = (1)
 
@@ -425,9 +425,7 @@ class MultiViewDfMFisheye(DfM):
                 dir_rot + dir_offset +
                 np.pi * dir_scores.to(bboxes.dtype))
         bboxes = LiDARInstance3DBoxes(bboxes, box_dim=box_code_size)
- 
         bbox_results = [
-                bbox3d2result(det_bboxes, det_scores, det_labels)
-                for det_bboxes, det_scores, det_labels in zip(bboxes, scores, labels)
+                bbox3d2result(bboxes, scores, labels)
             ]
         return bbox_results
