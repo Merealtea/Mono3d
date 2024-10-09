@@ -9,6 +9,7 @@ from core.bbox.structures import (get_proj_mat_by_coord_type,
                                           points_cam2img, points_img2cam)
 from ..builder import FUSION_LAYERS
 from . import apply_3d_transformation
+from time import time
 
 def grid_sample(input, grid, mode='bilinear', padding_mode='zeros', align_corners=None):
     # Now we will only implement the bilinear mode and nearesr mode with zero pad 
@@ -20,7 +21,7 @@ def grid_sample(input, grid, mode='bilinear', padding_mode='zeros', align_corner
     x = grid[:, :, :, 0]
     y = grid[:, :, :, 1]
 
-    if align_corners:
+    if align_corners:        
         x = ((x + 1) / 2) * (iw - 1)
         y = ((y + 1) / 2) * (ih - 1)
     else:
@@ -36,7 +37,7 @@ def grid_sample(input, grid, mode='bilinear', padding_mode='zeros', align_corner
         padded_h = ih + 2
         padded_w = iw + 2
     else:
-        pass
+        raise NotImplementedError("Only support zero padding for now")
     x0 = torch.floor(x)
     y0 = torch.floor(y)
     x1 = x0 + 1
@@ -69,7 +70,7 @@ def grid_sample(input, grid, mode='bilinear', padding_mode='zeros', align_corner
         Ic = torch.gather(im_padded, 2, x1_y0)
         Id = torch.gather(im_padded, 2, x1_y1)
 
-        return (Ia * wa + Ib * wb + Ic * wc + Id * wd).reshape(n, c, gh, gw).to(im.device)
+        return (Ia * wa + Ib * wb + Ic * wc + Id * wd).reshape(n, c, gh, gw).to(input.device)
 
 
     elif mode =='nearest':
@@ -81,14 +82,17 @@ def grid_sample(input, grid, mode='bilinear', padding_mode='zeros', align_corner
         x_idx = torch.clamp(x_idx, 0, padded_w-1)
         y_idx = torch.clamp(y_idx, 0, padded_h-1)
 
+        _, l = x_idx.shape
+        ones = torch.ones(n, c, l).to(input.device)
         im_padded = im_padded.reshape((-1,))
-        idx = torch.zeros_like(x_idx)[:,None,:].expand(-1, c, -1) 
-        channel_idx = torch.arange(c)[None, :, None].expand_as(idx).to(input.device)
-        batch_idx = torch.arange(n)[:, None, None].expand_as(idx).to(input.device)
+
+        channel_idx = torch.arange(c).view(1, c, 1).to(input.device) * ones
+        batch_idx = torch.arange(n).view(n, 1, 1).to(input.device) * ones
         idx = (x_idx + y_idx * padded_w + channel_idx * padded_w * padded_h + batch_idx * padded_w * padded_h * c).long()
         idx = idx.reshape((-1,))
-
+        
         sample_feature = im_padded[idx]
+        
         return sample_feature.reshape(n, c, gh, gw)
 
 
@@ -231,6 +235,7 @@ def point_sample_fisheye(img_meta,
     # apply transformation based on info in img_meta
     points = apply_3d_transformation(
         points, coord_type, img_meta, reverse=True)
+
     # project points to camera coordinate
     if valid_flag:
         proj_pts = camera_model.world2cam(points.transpose(0,1)) 
@@ -240,7 +245,6 @@ def point_sample_fisheye(img_meta,
         
     else:
         pts_2d = camera_model.cam2image(points.transpose(0,1), False).transpose(0,1)
-
     # img transformation: scale -> crop -> flip
     # the image is resized by img_scale_factor
     img_coors = pts_2d[:, 0:2] * img_scale_factor  # Nx2
@@ -273,7 +277,6 @@ def point_sample_fisheye(img_meta,
     )
 
     ori_h, ori_w = img_shape
-
     if valid_flag:
         # (N, )
         valid = (coor_x.squeeze() < ori_w) & (coor_x.squeeze() > 0) & (

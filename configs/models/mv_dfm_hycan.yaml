@@ -1,5 +1,5 @@
 type : 'MultiViewDfMFisheye'
-vehicle : 'Rock'
+vehicle : 'Hycan'
 num_views : 4
 num_ref_frames : 0
 backbone : 

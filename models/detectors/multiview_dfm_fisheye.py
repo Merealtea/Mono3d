@@ -11,7 +11,7 @@ from .dfm import DfM
 from configs.FisheyeParam import CamModel
 from core.bbox.structures.lidar_box3d import LiDARInstance3DBoxes
 from core import xywhr2xyxyr, box3d_multiclass_nms, limit_period
-
+from time import time
 
 @DETECTORS.register_module()
 class MultiViewDfMFisheye(DfM):
@@ -90,6 +90,7 @@ class MultiViewDfMFisheye(DfM):
         Returns:
             torch.Tensor: bev feature with shape [B, C_out, N_y, N_x].
         """
+        
         # TODO: Nt means the number of frames temporally
         # num_views means the number of views of a frame
         batch_size, _, C_in, H, W = img.shape
@@ -123,6 +124,7 @@ class MultiViewDfMFisheye(DfM):
             batch_feats = batch_feats.view(batch_size, -1, C_feat, H_feat,
                                            W_feat)
         # transform the feature to voxel & stereo space
+        
         transform_feats = self.feature_transformation(batch_feats, img_metas,
                                                       self.num_views, num_frames)
         if self.with_depth_head_2d:
@@ -133,8 +135,10 @@ class MultiViewDfMFisheye(DfM):
     def feature_transformation(self, batch_feats, img_metas, num_views,
                                num_frames):
         # TODO: support more complicated 2D feature sampling
+        st  = time()
         points = self.anchor_generator.grid_anchors(
             [self.n_voxels[::-1]], device=batch_feats.device)[0][:, :3]
+        
         volumes = []
         img_scale_factors = []
         img_flips = []
@@ -145,10 +149,10 @@ class MultiViewDfMFisheye(DfM):
                         img_meta['scale_factor'],
                         np.ndarray) and len(img_meta['scale_factor']) >= 2:
                     img_scale_factor = (
-                        points.new_tensor(img_meta['scale_factor'][:2]))
+                        points.new_tensor(img_meta['scale_factor'][:2])).to(points.device)
                 else:
                     img_scale_factor = (
-                        points.new_tensor(img_meta['scale_factor']))
+                        points.new_tensor(img_meta['scale_factor'])).to(points.device)
             else:
                 img_scale_factor = (1)
 
@@ -228,6 +232,7 @@ class MultiViewDfMFisheye(DfM):
             volumes.append(
                 frame_volume.reshape(self.n_voxels[::-1] + [-1]).permute(
                     3, 2, 1, 0))
+        
         volume_feat = torch.stack(volumes)  # (B, C, N_x, N_y, N_z)
         if self.with_backbone_3d:
             outputs = self.backbone_3d(volume_feat)
@@ -350,7 +355,7 @@ class MultiViewDfMFisheye(DfM):
             stereo_feat = feats[1]
             depth_volumes, _, depth_preds = self.depth_head(stereo_feat)
         """
-
+        
         if not isinstance(self.bbox_head_3d, CenterHead):
             bbox_list = self.bbox_head_3d.get_bboxes(*outs, img_metas)
         else:
@@ -360,6 +365,7 @@ class MultiViewDfMFisheye(DfM):
             bbox3d2result(det_bboxes, det_scores, det_labels)
             for det_bboxes, det_scores, det_labels in bbox_list
         ]
+ 
         return bbox_results
 
     def aug_test(self, imgs, img_metas, **kwargs):
@@ -425,9 +431,7 @@ class MultiViewDfMFisheye(DfM):
                 dir_rot + dir_offset +
                 np.pi * dir_scores.to(bboxes.dtype))
         bboxes = LiDARInstance3DBoxes(bboxes, box_dim=box_code_size)
- 
         bbox_results = [
-                bbox3d2result(det_bboxes, det_scores, det_labels)
-                for det_bboxes, det_scores, det_labels in zip(bboxes, scores, labels)
+                bbox3d2result(bboxes, scores, labels)
             ]
         return bbox_results

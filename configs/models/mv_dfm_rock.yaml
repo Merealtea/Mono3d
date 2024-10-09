@@ -1,5 +1,6 @@
 type : 'MultiViewDfMFisheye'
 vehicle : 'Rock'
+num_ref_frames : 0
 backbone : 
     type : 'ResNet'
     depth : 50
@@ -9,7 +10,11 @@ backbone :
     norm_eval : True
     init_cfg : 
       type : 'Pretrained' 
+<<<<<<< HEAD
       checkpoint : torchvision://resnet50
+=======
+      checkpoint : 'torchvision://resnet50'
+>>>>>>> cfdf0095854ab99d3babe924696db958484c171a
 neck : 
     type : 'FPN'
     in_channels : [256, 512, 1024, 2048]

@@ -2,7 +2,8 @@ import argparse
 import os
 from os import path 
 import sys
-sys.path.append('/data/cxy/Mono3d')
+abs_path = os.path.abspath(__file__)
+sys.path.append(abs_path.split('tools')[0])
 
 import torch
 import yaml

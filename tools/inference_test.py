@@ -45,24 +45,21 @@ def allocate_buffers(engine, batch_size=1):
 # 推理函数
 def infer(engine, context, input_dict):
     # 提取输入字典中的 key 和 value
-    input_tensor = input_dict['input']  # torch.tensor
+    input = input_dict['input']  # np.ndarray
     img_metas = input_dict['img_metas']  # dict
     return_loss = input_dict['return_loss']  # bool
-
-    # 将输入的 torch.Tensor 转换为 numpy array
-    input_tensor_np = input_tensor.detach().cpu().numpy()
 
     # 分配缓冲区
     inputs, outputs, bindings, stream = allocate_buffers(engine)
 
     # 填充输入数据到缓冲区
-    np.copyto(inputs[0][0], input_tensor_np.ravel())
+    np.copyto(inputs[0][0], input.ravel())
 
     # 将输入数据拷贝到设备
     cuda.memcpy_htod_async(inputs[0][1], inputs[0][0], stream)
 
     # 执行推理
-    context.execute_v2(bindings)
+    context.execute_async_v2(bindings, stream.handle)
 
     # 将输出数据拷贝回主机
     cuda.memcpy_dtoh_async(outputs[0][0], outputs[0][1], stream)
@@ -103,6 +100,6 @@ if __name__ == "__main__":
     start = time.time()
     output = infer(engine, context, input_dict)
     bbox_res = MultiViewDfMFisheye.nms_for_bboxes(output[0])
-    print("Inference Output: ", output)
+    print("Inference Output: ", bbox_res)
     # print("Inference Output Shape: ", output.shape)
     print("Inference Time: ", time.time() - start)
