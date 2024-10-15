@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import cv2
+import random
 from copy import deepcopy
 import os
 
@@ -20,6 +21,7 @@ def to_device(data, device):
 def init_random_seed(seed=None):
     if seed is None:
         seed = np.random.randint(2**32 - 1)
+    random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)

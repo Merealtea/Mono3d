@@ -1,53 +1,28 @@
-type : 'MultiViewDfMFisheye'
-vehicle : 'Rock'
-num_ref_frames : 0
+type : 'MultiViewLSSFisheye'
+vehicle : 'Hycan'
+num_views : 4
 backbone : 
-    type : 'ResNet'
-    depth : 50
-    num_stages : 4
-    out_indices : [0, 1, 2, 3]
-    frozen_stages : 1
-    norm_eval : True
-    init_cfg : 
-      type : 'Pretrained' 
-      checkpoint : 'torchvision://resnet50'
-
-neck : 
-    type : 'FPN'
-    in_channels : [256, 512, 1024, 2048]
-    out_channels : 64
-    num_outs : 4
-neck_2d : 
-bbox_head_2d : 
-backbone_stereo : 
-depth_head : 
-backbone_3d : 
-# neck_3d :
-#   type : 'OutdoorImVoxelNeck'
-#   in_channels : 64
-#   out_channels : 256
-
-neck_3d : 
-    type : 'DfMNeck'
-    in_channels : 64
-    out_channels : 256
-    num_frames : 1  # num_frames = num_ref_frames+1
-valid_sample : True
-temporal_aggregate : 'concat'
-voxel_size : [0.1, 0.1, 0.25]  # n_voxels : [240, 300, 12]
-anchor_generator : 
-    type : 'AlignedAnchor3DRangeGenerator'
-    ranges : &range [[-10.0, -10.0, -3, 10.0, 10.0, 0]]
-    rotations : [.0]
+    type : 'EfficientNet'
+    C : &C 64
+    downsample : 4
+grid_conf :
+    xbound : [-10, 10, 0.1]
+    ybound : [-10, 10, 0.1]
+    zbound : [0, 3, 3]
+    dbound : [0.2, 10, 0.1]
+final_dim : [224, 400] # the image shape after preprocess
+normalizer_clamp_value : 10
+use_quickcumsum : False
+outC : &outC 256
 bbox_head_3d : 
     type : 'Anchor3DHead'
     num_classes : 1
-    in_channels : 256
-    feat_channels : 256
+    in_channels : *outC
+    feat_channels : *outC
     use_direction_classifier : True
     anchor_generator : 
         type : 'AlignedAnchor3DRangeGenerator'
-        ranges : *range
+        ranges : [[-10.0, -10.0, 0, 10.0, 10.0, 3]]
         sizes : [
             [0.5, 0.5, 1.74],  # pedestrian
         ]
@@ -62,7 +37,7 @@ bbox_head_3d :
         use_sigmoid : True
         gamma : 2.0
         alpha : 0.25
-        loss_weight : 1.0
+        loss_weight : 0.02
     loss_bbox : 
       type : 'SmoothL1Loss' 
       beta : 0.1111111111111111
@@ -70,7 +45,7 @@ bbox_head_3d :
     loss_dir : 
         type : 'CrossEntropyLoss' 
         use_sigmoid : False 
-        loss_weight : 0.2
+        loss_weight : 1.0
 train_cfg : 
     assigner : 
       -
