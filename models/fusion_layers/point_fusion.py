@@ -275,7 +275,7 @@ def point_sample_fisheye(img_meta,
         padding_mode=padding_mode,
         align_corners=align_corners
     )
-
+    # import pdb; pdb.set_trace()
     ori_h, ori_w = img_shape
     if valid_flag:
         # (N, )

@@ -9,7 +9,7 @@ img_norm_cfg : &img_norm_cfg
     mean : [123.675, 116.28, 103.53] 
     std : [58.395, 57.12, 57.375] 
     to_rgb : True
-img_scale : &img_scale [224, 224]
+img_scale : &img_scale [360, 360]
 
 load_mode : lidar_frame
 num_camera : 4

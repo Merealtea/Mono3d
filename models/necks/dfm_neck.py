@@ -264,7 +264,7 @@ class DfMNeckConv(nn.Module):
                  num_frames=2):
         super().__init__()
         if not isinstance(in_channels, list):
-            in_channels = [in_channels * 8, in_channels * 2, in_channels * 4]
+            in_channels = [in_channels * 12, in_channels * 2, in_channels * 4]
         self.in_channels = in_channels
         self.num_frames = num_frames
         self.mono_layers = nn.Sequential(

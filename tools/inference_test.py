@@ -9,6 +9,10 @@ import sys
 sys.path.append(abs_path.split('tools')[0])
 from models.detectors import MultiViewDfMFisheye
 
+class LayerProfiler(trt.IProfiler):
+    def report_layer_time(self, layer_name, ms):
+        print(f"Layer {layer_name}: {ms:.3f} ms")
+
 # 加载 TensorRT 引擎
 def load_engine(engine_file_path):
     TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
@@ -90,8 +94,14 @@ if __name__ == "__main__":
     # 创建上下文
     context = create_execution_context(engine)
 
+    # 实例化 profiler
+    profiler = LayerProfiler()
+
+    # 将 profiler 赋给 execution context
+    context.profiler = profiler
+
     # 准备输入数据
-    input_tensor = torch.randn(1, 4, 3, 480, 640)  # 假设的输入大小
+    input_tensor = torch.randn(1, 4, 3, 368, 640)  # 假设的输入大小
     img_metas = {'info': 'example metadata'}
     input_dict = {'input': input_tensor, 'img_metas': img_metas, 'return_loss': False}
 

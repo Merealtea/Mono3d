@@ -80,6 +80,11 @@ class MultiViewDfMFisheye(DfM):
         self.cam_models = dict(zip(["left", "right", "front", "back"], 
                                    [CamModel(cam_dir, vehicle, "torch", "cuda:0") for cam_dir in ["left", "right", "front", "back"]]) )
 
+    def to_device(self, device):
+        self.to(device)
+        for cam in self.cam_models:
+            self.cam_models[cam].to(device)
+
     def extract_feat(self, img, img_metas):
         """
         Args:
@@ -135,7 +140,6 @@ class MultiViewDfMFisheye(DfM):
     def feature_transformation(self, batch_feats, img_metas, num_views,
                                num_frames):
         # TODO: support more complicated 2D feature sampling
-        st  = time()
         points = self.anchor_generator.grid_anchors(
             [self.n_voxels[::-1]], device=batch_feats.device)[0][:, :3]
         
@@ -168,6 +172,7 @@ class MultiViewDfMFisheye(DfM):
             # different views
             frame_volume = []
             frame_valid_nums = []
+            # import pdb; pdb.set_trace()
             for frame_idx in range(num_frames):
                 volume = []
                 valid_flags = []
@@ -410,7 +415,7 @@ class MultiViewDfMFisheye(DfM):
                 max_num (int): Maximum number of selected bboxes.
                 use_rotate_nms (bool): Whether to use rotate nms.
         """
-        prediction_array = torch.tensor(prediction_array).reshape(-1, 10)
+        prediction_array = torch.tensor(prediction_array).reshape(-1, 10).to('cuda')
         mlvl_bboxes, mlvl_scores, mlvl_dir_scores = \
             prediction_array[:, :7],\
                   prediction_array[:, 7:9],\

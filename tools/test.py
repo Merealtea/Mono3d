@@ -84,7 +84,7 @@ def main():
     model_cfg["vehicle"] = cfg["vehicle"]
     model = build_detector(model_cfg)
     model.load_state_dict(torch.load(ckpt_file))
-    model.to(device)
+    model.to_device(device)
     model.eval()
 
     val_loader = torch.utils.data.DataLoader(val_dataset,

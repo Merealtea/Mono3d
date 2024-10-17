@@ -4,9 +4,17 @@ from os import path
 abs_path = path.abspath(__file__)
 import sys
 sys.path.append(abs_path.split("tools")[0])
-
+from utilities import init_random_seed, detection_visualization, to_device
+# set random seeds
+import random
 import torch
 import numpy as np
+seed = 2025
+random.seed(seed)
+np.random.seed(seed)
+torch.manual_seed(seed)
+torch.cuda.manual_seed_all(seed)
+print(f"Set random seed to {seed}")
 import torch.distributed as dist
 import yaml
 from tqdm import tqdm
@@ -19,7 +27,6 @@ import pickle
 from configs.FisheyeParam import CamModel
 
 import tensorboardX
-from utilities import init_random_seed, detection_visualization, to_device
 
 
 def clip_grads(params, grad_clip):
@@ -69,15 +76,18 @@ def create_folder(folder):
         print(f"Folder {folder} already exists. Skip creation.")
 
 def main():
-
     args = parse_args()
     ckpt_file = None
     start_epoch = 0
     vehicle = None
+    # set random seeds
+    seed = init_random_seed(2025)
+    print(f"Set random seed to {seed}")
     if args.last_ckpt is not None:
         save_path = args.last_ckpt
         cfg = yaml.safe_load(open(os.path.join(save_path, 'config', 'train_config.yaml')))
         tensorboard_path = os.path.join(save_path, 'tensorboard')
+
         vehicle = cfg["vehicle"]
         # load dataset
         with open(os.path.join(save_path, 'config', 'dataset_config.yaml')) as f:
@@ -97,6 +107,11 @@ def main():
         with open(args.config) as f:
             cfg = yaml.safe_load(f)
             vehicle = cfg["vehicle"]
+
+        # set random seeds
+        seed = init_random_seed(cfg['seed'])
+        print(f"Set random seed to {seed}")
+        
         # Create save folder to save the ckpt
         save_path = cfg['save_path']
         save_path = os.path.join(save_path, datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
@@ -166,16 +181,12 @@ def main():
                                 pin_memory=True,
                                 collate_fn=val_dataset.collate)
 
-    # set random seeds
-    seed = init_random_seed(cfg['seed'])
-    print(f"Set random seed to {seed}")
-
     if ckpt_file is not None:
         model.load_state_dict(torch.load(ckpt_file))
     else:
         model.init_weights()
 
-    model.to(device)
+    model.to_device(device)
     model.train()
 
     if cfg["freeze_backbone"]:
@@ -202,6 +213,19 @@ def main():
             to_device(data, device)
             data['img_metas'][0]['epoch'] = epoch
             data["return_loss"] = True
+
+            ############################################
+            # DEBUG
+            # img_data = data['img'][0]
+            # if not os.path.exists("./debug_img"):
+            #     os.makedirs("./debug_img")
+
+            # for j, cam_dir in enumerate(data['img_metas'][0]['direction']):
+            #     img = (img_data[j].detach().cpu().numpy().transpose(1, 2, 0) * 80).astype(np.uint8)
+            #     cv2.imwrite(f"./debug_img/{cam_dir}_{j}_{i}.jpg", img)
+
+            import pdb; pdb.set_trace()
+            ############################################
 
             loss_res = model(**data)
 

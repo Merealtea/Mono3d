@@ -3,6 +3,7 @@ from mmdeploy.utils import Backend
 from mmdeploy.apis.utils import to_backend
 import logging
 import argparse
+import os
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Convert ONNX model to TensorRT model')
@@ -13,7 +14,7 @@ args = parse_args()
 device = 'cuda'
 log_level = logging.INFO
 
-height = 480
+height = 368
 width = 640
 onnx_model_path = args.onnx_model_path 
 
@@ -37,10 +38,15 @@ backend_config = {
     }
 }
 
+if onnx_model_path[0] != '/':
+    workdir = os.path.abspath(os.path.join(os.getcwd(), *onnx_model_path.split('/')[:-1]))
+else:
+    workdir = '/' + os.path.join(*onnx_model_path.split('/')[:-1])
+
 trt_model_file = to_backend(
     backend,
     [onnx_model_path],
-    work_dir=onnx_model_path.split('hycan_folded')[0],
+    work_dir=workdir,
     deploy_cfg=backend_config,
     log_level=log_level,
     device=device)

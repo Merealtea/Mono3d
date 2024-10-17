@@ -290,7 +290,6 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
             loss_bbox = pos_bbox_pred.sum()
             if self.use_direction_classifier:
                 loss_dir = pos_dir_cls_preds.sum()
-
         return loss_cls, loss_bbox, loss_dir
 
     @staticmethod

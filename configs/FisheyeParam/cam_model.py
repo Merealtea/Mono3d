@@ -145,7 +145,10 @@ class CamModel:
                 self.cam2world_mat = self.cam2world_mat.to(device)
 
     def image2cam(self, points2D, points_depth):
-        """ Returns the 3D points projected on the sphere from the image pixels. """
+        """ 
+            Returns the 3D points projected on the sphere from the image pixels.
+            points2D : N x (W x H) 
+        """
         assert points2D.shape[0] == 2, "points2D must be a 2xN matrix. "
         assert len(points_depth) == points2D.shape[1], "depth must have the same length as points2D. "
         if self.version == "numpy":
