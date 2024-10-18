@@ -8,20 +8,85 @@ sys.path.append(abs_path.split('tools')[0])
 import torch
 import yaml
 from tqdm import tqdm
-import pycuda.driver as cuda
+# import pycuda.driver as cuda
 # import pycuda.autoinit
-from inference_test import TRTModel
+from models.detectors import MultiViewDfMFisheye
+import onnx 
+import onnxruntime
 from builder.build_dataset import build_dataset
 from configs.FisheyeParam import CamModel
 from utilities import  detection_visualization, turn_gt_to_annos
 
+class OnnxModel():
+    def __init__(self, onnx_path):
+        """
+        :param onnx_path:
+        """
+        self.onnx_session = onnxruntime.InferenceSession(onnx_path, providers=['CUDAExecutionProvider'])
+        self.input_name = self.get_input_name(self.onnx_session)
+        self.output_name = self.get_output_name(self.onnx_session)
+        print("input_name:{}".format(self.input_name))
+        print("output_name:{}".format(self.output_name))
+
+    def get_output_name(self, onnx_session):
+        """
+        output_name = onnx_session.get_outputs()[0].name
+        :param onnx_session:
+        :return:
+        """
+        output_name = []
+        for node in onnx_session.get_outputs():
+            output_name.append(node.name)
+        return output_name
+
+    def get_input_name(self, onnx_session):
+        """
+        input_name = onnx_session.get_inputs()[0].name
+        :param onnx_session:
+        :return:
+        """
+        input_name = []
+        for node in onnx_session.get_inputs():
+            input_name.append(node.name)
+        return input_name
+
+    def get_input_feed(self, input_name, input_tensor, img_metas):
+        """
+        input_feed={self.input_name: image_tensor}
+        :param input_name:
+        :param image_tensor:
+        :return:
+        """
+        input_feed = {}
+        input_feed['input'] = input_tensor
+
+        return input_feed
+
+    def __call__(self, input_tesor, return_loss=False, img_metas=None):
+        return self.forward(input_tesor, return_loss, img_metas)
+
+    def forward(self, input_tesor, return_loss=False, img_metas=None):
+        '''
+        image_tensor = image.transpose(2, 0, 1)
+        image_tensor = image_tensor[np.newaxis, :]
+        onnx_session.run([output_name], {input_name: x})
+        :param image_tensor:
+        :return:
+        '''
+        # 输入数据的类型必须与模型一致,以下三种写法都是可以的
+        # scores, boxes = self.onnx_session.run(None, {self.input_name: image_tensor})
+        # scores, boxes = self.onnx_session.run(self.output_name, input_feed={self.input_name: image_tensor})
+        input_feed = self.get_input_feed(self.input_name, input_tesor, img_metas)
+        output = self.onnx_session.run(self.output_name, input_feed=input_feed)
+        bbox_res = MultiViewDfMFisheye.nms_for_bboxes(output[0])
+        return bbox_res
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a detector')
     parser.add_argument('--last_ckpt', help='train config file path')
     parser.add_argument('--val_data_path', help='val data path')
     parser.add_argument('--vehicle', help='vehicle type', default=None)
-    parser.add_argument('--trt_model_path', help='trt model path')
+    parser.add_argument('--onnx_model_path', help='onnx model path')
     args = parser.parse_args()
     return args
 
@@ -34,20 +99,20 @@ def create_folder(folder):
 
 def main():
     args = parse_args()
-    context = cuda.Device(0).make_context()
+
     ckpt_path = args.last_ckpt
     cfg = yaml.safe_load(open(os.path.join(ckpt_path, 'config', 'train_config.yaml')))
     vehicle = cfg["vehicle"] if args.vehicle is None else args.vehicle
-    cuda.init()
+
     cam_models = dict(zip(["left", "right", "front", "back"], [CamModel(direction, vehicle) for direction in ["left", "right", "front", "back"]]))
     # load dataset
     with open(os.path.join(ckpt_path, 'config', 'dataset_config.yaml')) as f:
         dataset_cfg = yaml.safe_load(f)
 
     # load model
-    trt_model_path = args.trt_model_path
+    onnx_model_path = args.onnx_model_path
     # cfx = cuda.Device(0).make_context()
-    trt_model = TRTModel(trt_model_path)
+    trt_model = OnnxModel(onnx_model_path)
 
     # Create save folder to save the ckpt
     data_datetime = args.val_data_path.split('/')[-1]
@@ -74,7 +139,7 @@ def main():
 
 
     # eval model
-    bbox_res_path = os.path.join(save_path, "trt", "val_bbox_pre")
+    bbox_res_path = os.path.join(save_path, "onnx", "val_bbox_pre")
     create_folder(bbox_res_path)
 
     for direction in ["left", "right", "front", "back"]:
@@ -109,12 +174,10 @@ def main():
                     cam_model = cam_models[direction]
                     bbox_res_dir_path = os.path.join(bbox_res_path, direction)
                     detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_dir_path, bboxes_coor = "Lidar")
-    context.pop()
 
     # Evaluate the result with prediction and ground truth  
     ground_truth = turn_gt_to_annos(ground_truth, val_dataset.CLASSES)
     val_dataset.evaluate(detection_res, ground_truth, metric='kitti')
-    
 
 if __name__ == '__main__':
     main()

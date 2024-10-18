@@ -1,4 +1,4 @@
-import onnx
+import time
 from mmdeploy.utils import Backend
 from mmdeploy.apis.utils import to_backend
 import logging
@@ -10,8 +10,10 @@ def parse_args():
     parser.add_argument('--onnx_model_path', type=str, default='/media/data/ckpt/onnx/hycan_folded.onnx', help='ONNX model path')
     return parser.parse_args() 
 
+st = time.time()
+
 args = parse_args()
-device = 'cuda'
+device = 'cuda:0'
 log_level = logging.INFO
 
 height = 368
@@ -52,3 +54,4 @@ trt_model_file = to_backend(
     device=device)
 
 print("TensorRT model is saved at: ", trt_model_file)
+print("Time cost: ", time.time() - st)

@@ -37,7 +37,10 @@ class MultiViewDfMFisheye(DfM):
                  transform_depth=True,
                  pretrained=None,
                  vehicle = None,
-                 input_shape = None,
+                #  input_shape = None,
+                #  pad_shape = None,
+                #  ratio = None, 
+                #  img_shape = None,
                  num_views=4,
                  num_ref_frames=0,
                  init_cfg=None):
@@ -73,9 +76,11 @@ class MultiViewDfMFisheye(DfM):
         self.temporal_aggregate = temporal_aggregate
         self.transform_depth = transform_depth
 
-        self.input_shape = input_shape
-        # self.pad_shape = pad_shape
-        # self.ratio = ratio
+        # onnx export parameters
+        self.input_shape = None
+        self.pad_shape = None
+        self.img_shape = None
+        self.ratio = None
 
         self.cam_models = dict(zip(["left", "right", "front", "back"], 
                                    [CamModel(cam_dir, vehicle, "torch", "cuda:0") for cam_dir in ["left", "right", "front", "back"]]) )
@@ -84,6 +89,12 @@ class MultiViewDfMFisheye(DfM):
         self.to(device)
         for cam in self.cam_models:
             self.cam_models[cam].to(device)
+
+    def set_onnx_parameters(self, input_shape, pad_shape, ratio, img_shape):
+        self.input_shape = input_shape
+        self.pad_shape = pad_shape
+        self.ratio = ratio
+        self.img_shape = img_shape
 
     def extract_feat(self, img, img_metas):
         """
@@ -148,19 +159,22 @@ class MultiViewDfMFisheye(DfM):
         img_flips = []
         img_crop_offsets = []
         for feature, img_meta in zip(batch_feats, img_metas):
-            if 'scale_factor' in img_meta:
-                if isinstance(
-                        img_meta['scale_factor'],
-                        np.ndarray) and len(img_meta['scale_factor']) >= 2:
-                    img_scale_factor = (
-                        points.new_tensor(img_meta['scale_factor'][:2])).to(points.device)
-                else:
-                    img_scale_factor = (
-                        points.new_tensor(img_meta['scale_factor'])).to(points.device)
+            if torch.onnx.is_in_onnx_export():
+                img_scale_factor = self.ratio
             else:
-                img_scale_factor = (1)
+                if 'scale_factor' in img_meta:
+                    if isinstance(
+                            img_meta['scale_factor'],
+                            np.ndarray) and len(img_meta['scale_factor']) >= 2:
+                        img_scale_factor = (
+                            points.new_tensor(img_meta['scale_factor'][:2])).to(points.device)
+                    else:
+                        img_scale_factor = (
+                            points.new_tensor(img_meta['scale_factor'])).to(points.device)
+                else:
+                    img_scale_factor = (1)
 
-            img_flip = img_meta['flip'] if 'flip' in img_meta.keys() else False
+            img_flip = False #img_meta['flip'] if 'flip' in img_meta.keys() else False
             img_crop_offset = (
                 points.new_tensor(img_meta['img_crop_offset'])
                 if 'img_crop_offset' in img_meta.keys() else 0)
@@ -179,19 +193,34 @@ class MultiViewDfMFisheye(DfM):
                 for view_idx in range(num_views):
                     cam_dir = img_meta['direction'][view_idx]
                     sample_idx = frame_idx * num_views + view_idx
-                    sample_results = point_sample_fisheye(
-                        img_meta,
-                        img_features=feature[sample_idx][None, ...],
-                        points=points,
-                        camera_model=self.cam_models[cam_dir],
-                        coord_type='LIDAR',
-                        img_scale_factor=img_scale_factor,
-                        img_crop_offset=img_crop_offset,
-                        img_flip=img_flip,
-                        img_pad_shape=img_meta['input_shape'],
-                        img_shape=img_meta['img_shape'][sample_idx][:2],
-                        aligned=False,
-                        valid_flag=self.valid_sample)
+                    if torch.onnx.is_in_onnx_export():
+                        sample_results = point_sample_fisheye(
+                            img_meta,
+                            img_features=feature[sample_idx][None, ...],
+                            points=points,
+                            camera_model=self.cam_models[cam_dir],
+                            coord_type='LIDAR',
+                            img_scale_factor=img_scale_factor,
+                            img_crop_offset=img_crop_offset,
+                            img_flip=img_flip,
+                            img_pad_shape=self.pad_shape,
+                            img_shape=self.input_shape,
+                            aligned=False,
+                            valid_flag=self.valid_sample)
+                    else:
+                        sample_results = point_sample_fisheye(
+                            img_meta,
+                            img_features=feature[sample_idx][None, ...],
+                            points=points,
+                            camera_model=self.cam_models[cam_dir],
+                            coord_type='LIDAR',
+                            img_scale_factor=img_scale_factor,
+                            img_crop_offset=img_crop_offset,
+                            img_flip=img_flip,
+                            img_pad_shape=img_meta['input_shape'],
+                            img_shape=img_meta['img_shape'][sample_idx][:2],
+                            aligned=False,
+                            valid_flag=self.valid_sample)
                     if self.valid_sample:
                         volume.append(sample_results[0])
                         valid_flags.append(sample_results[1])
@@ -404,8 +433,8 @@ class MultiViewDfMFisheye(DfM):
     @staticmethod
     def nms_for_bboxes(prediction_array,
                         box_code_size = 7,
-                        max_num=100,
-                        score_thr=0.0, 
+                        max_num=500,
+                        score_thr=0.02, 
                         dir_offset=0,
                         dir_limit_offset=0,
                         cfg={}):
@@ -420,8 +449,9 @@ class MultiViewDfMFisheye(DfM):
             prediction_array[:, :7],\
                   prediction_array[:, 7:9],\
                       prediction_array[:, 9]
+       
         cfg['use_rotate_nms'] = False
-        cfg['nms_thr'] = 0.5
+        cfg['nms_thr'] = 0.05
         mlvl_bboxes_for_nms = xywhr2xyxyr(LiDARInstance3DBoxes(
             mlvl_bboxes, box_dim=box_code_size).bev)
         
