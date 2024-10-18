@@ -111,4 +111,3 @@ test_cfg :
     min_bbox_size : 0
     nms_pre : 500
     max_num : 100
-input_shape : [720, 1280]

@@ -15,6 +15,7 @@ import torch
 import onnx_graphsurgeon as gs
 from time import time
 import logging
+import cv2
 
 def arg_parse():
     parser = argparse.ArgumentParser(description='Convert Pytorch model to ONNX model')
@@ -49,19 +50,33 @@ else:
 detector.to(device)
 detector.eval()
 
-dummy_input = torch.randn(1, 4, 3, pad_height, pad_width).to(device)
+directions = ['left', 'right', 'front', 'back']
+mean = np.array([123.675, 116.28, 103.53], dtype=np.float32).reshape(1, 1, 3)
+std = np.array([58.395, 57.12, 57.375], dtype=np.float32).reshape(1, 1, 3)
+
+dummy_input = []
+for direction in directions:
+    img = cv2.imread('./tools/sample/{}/{}.jpg'.format(vehicle, direction))
+    img = cv2.resize(img, (width, height))
+    pad_image = np.zeros((pad_height, pad_width, 3), dtype=np.uint8)
+    pad_image[:height, :width, :] = img
+    pad_image = (pad_image.astype(np.float32) - mean) / std
+    pad_image = pad_image.transpose(2, 0, 1)[None, :, :, :]
+    dummy_input.append(torch.FloatTensor(pad_image).to(device))
+
+dummy_input = torch.cat(dummy_input, dim=0).unsqueeze(0).to(device)
 log_level = logging.INFO
 img_metas = [
     dict(
         img_shape=[(height, width, 3)] * 4,
         ori_shape=[(720, 1280, 3)] *4,
         pad_shape=[(pad_height, pad_width, 3)] * 4,
-        scale_factor=torch.FloatTensor([height / 720, height / 720]).to(device),
+        scale_factor=[height / 720, height / 720, height / 720, height / 720],
         flip=False,
         keep_ratio=True,
         num_views = 4,
         num_ref_frames = 0,
-        direction = ['front', 'back', 'left', 'right'],
+        direction = directions,
         pad_size_divisor = 16,
     )
 ]
@@ -69,9 +84,16 @@ img_metas = [
 st = time()
 
 with torch.no_grad():
-    torch.onnx.export(detector, (dummy_input, img_metas, False), 
+    detector.set_onnx_parameters(
+        input_shape=img_metas[0]['img_shape'][0][:2],
+        pad_shape=img_metas[0]['pad_shape'][0][:2],
+        ratio=img_metas[0]['scale_factor'][0],
+        img_shape=img_metas[0]['ori_shape'][0][:2]
+    )
+
+    torch.onnx.export(detector, (dummy_input, img_metas), 
                         onnx_model_path, verbose=True, opset_version=12,
-                        input_names=['input', 'img_metas', 'return_loss'],
+                        input_names=['input', 'img_metas'],
                         output_names=['boxes_3d'],
                         do_constant_folding=False)
 print("Exporting onnx model costs: ", time() - st)

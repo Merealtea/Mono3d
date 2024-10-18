@@ -2,7 +2,6 @@ import tensorrt as trt
 import torch
 import numpy as np
 import pycuda.driver as cuda
-import pycuda.autoinit
 import os
 abs_path = os.path.abspath(__file__)
 import sys
@@ -50,9 +49,6 @@ def allocate_buffers(engine, batch_size=1):
 def infer(engine, context, input_dict):
     # 提取输入字典中的 key 和 value
     input = input_dict['input']  # np.ndarray
-    img_metas = input_dict['img_metas']  # dict
-    return_loss = input_dict['return_loss']  # bool
-
     # 分配缓冲区
     inputs, outputs, bindings, stream = allocate_buffers(engine)
 
@@ -81,7 +77,7 @@ class TRTModel:
         self.context = create_execution_context(self.engine)
 
     def __call__(self, input_tesor, img_metas, return_loss):
-        input_dict = {'input': input_tesor, 'img_metas': img_metas, 'return_loss': return_loss}
+        input_dict = {'input': input_tesor}
         output = infer(self.engine, self.context, input_dict)
         bbox_res = MultiViewDfMFisheye.nms_for_bboxes(output[0])
         return bbox_res
@@ -89,7 +85,8 @@ class TRTModel:
 # 主函数
 if __name__ == "__main__":
     # 加载引擎
-    engine = load_engine("/media/data/ckpt/onnx/hycan_folded.engine")
+    import pycuda.autoinit
+    engine = load_engine("/media/data/V2X_AEB/model_ckpt/hycan_mv_fcos3d_folded.engine")
 
     # 创建上下文
     context = create_execution_context(engine)
@@ -101,9 +98,10 @@ if __name__ == "__main__":
     context.profiler = profiler
 
     # 准备输入数据
-    input_tensor = torch.randn(1, 4, 3, 368, 640)  # 假设的输入大小
-    img_metas = {'info': 'example metadata'}
-    input_dict = {'input': input_tensor, 'img_metas': img_metas, 'return_loss': False}
+    input_tensor = np.random.randn(1, 4, 3, 368, 640)  # 假设的输入大小
+    img_metas = {'info': 'example metadata',
+                 'scale_factor': np.array([0.5, 0.5, 0.5, 0.5], np.float32)}  # 假设的元数据
+    input_dict = {'input': input_tensor, 'img_scale_factor': img_metas['scale_factor'][:2]}
 
     # 运行推理
     import time
