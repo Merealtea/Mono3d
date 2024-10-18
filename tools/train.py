@@ -223,8 +223,6 @@ def main():
             # for j, cam_dir in enumerate(data['img_metas'][0]['direction']):
             #     img = (img_data[j].detach().cpu().numpy().transpose(1, 2, 0) * 80).astype(np.uint8)
             #     cv2.imwrite(f"./debug_img/{cam_dir}_{j}_{i}.jpg", img)
-
-            import pdb; pdb.set_trace()
             ############################################
 
             loss_res = model(**data)
@@ -265,7 +263,7 @@ def main():
                         loss_single = loss_res[key][0] if isinstance(loss_res[key], list) else loss_res[key]
                         writer.add_scalar(f'val {key}', loss_single.item(), val_epoch * len(val_loader) + i)
                     
-                if epoch % 10 == 0:
+                if (epoch + 1) % 10 == 0 and epoch > 30:
                     torch.save(model.state_dict(), f"{save_path}/epoch_{epoch}.pth")
                     print(f"Save best model at epoch {epoch}")
 

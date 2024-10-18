@@ -9,8 +9,8 @@ grid_conf :
     xbound : [-10, 10, 0.1]
     ybound : [-10, 10, 0.1]
     zbound : [0, 3, 3]
-    dbound : [0.2, 10, 0.1]
-final_dim : [224, 400] # the image shape after preprocess
+    dbound : [0.25, 10, 0.25]
+final_dim : [368, 640] # the image shape after preprocess
 normalizer_clamp_value : 10
 use_quickcumsum : False
 outC : &outC 256

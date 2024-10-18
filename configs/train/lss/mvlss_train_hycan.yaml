@@ -1,6 +1,6 @@
 model_config : configs/models/mv_lss_hycan.yaml
 dataset_config : configs/datasets/custom-mv3d.yaml
-data_root : ./data/2024-06-25-21-47-20
+data_root : ./data/merged_dataset
 save_path : ./ckpt/
 annotation_prefix : annotations
 image_prefix : images

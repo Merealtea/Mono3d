@@ -205,6 +205,11 @@ class MultiViewLSSFisheye(nn.Module):
         self.cam_models = dict(zip(["left", "right", "front", "back"], 
                                    [CamModel(cam_dir, vehicle, "torch", "cuda:0") for cam_dir in ["left", "right", "front", "back"]]) )
     
+    def to_device(self, device):
+        self.to(device)
+        for direction in self.cam_models:
+            self.cam_models[direction].to(device)
+
     def init_weights(self, pretrained=None):
         """Initialize the weights in detector.
 
