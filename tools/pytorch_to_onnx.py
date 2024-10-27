@@ -36,7 +36,7 @@ config = os.path.join(config_path, 'mv_dfm_{}.yaml'.format(vehicle))
 with open(config, 'r') as f:
     config = yaml.safe_load(f)
 detector = build_detector(config)
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
 # detector.load_state_dict(torch.load(ckpt_path))
 height = 360
 width = 640
@@ -46,7 +46,7 @@ pad_width = 640
 
 # start to turn torch into onnx
 if args.ckpt_path is not None:
-    detector.load_state_dict(torch.load(args.ckpt_path))
+    detector.load_state_dict(torch.load(args.ckpt_path, map_location=device))
     onnx_model_path = args.ckpt_path.replace('.pth', '.onnx')
 else:
     ckpt_path = '../ckpt/onnx/'
@@ -71,6 +71,7 @@ for direction in directions:
     dummy_input.append(torch.FloatTensor(pad_image).to(device))
 
 dummy_input = torch.cat(dummy_input, dim=0).unsqueeze(0).to(device)
+print("dummy_input shape: ", dummy_input.shape)
 log_level = logging.INFO
 img_metas = [
     dict(
