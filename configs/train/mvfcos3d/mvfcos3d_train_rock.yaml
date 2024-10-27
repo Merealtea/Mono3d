@@ -1,6 +1,6 @@
 model_config : ./configs/models/mv_dfm_rock.yaml
 dataset_config : ./configs/datasets/custom-mv3d.yaml
-data_root : ./data/2024-07-06-19-40-42
+data_root : ./data/merged_dataset_Rock
 save_path : ./ckpt/
 annotation_prefix : annotations
 image_prefix : images
@@ -17,7 +17,7 @@ vehicle : Rock  # Hycan
 
 # backbone setup
 save_backbone : False
-freeze_backbone : True
+freeze_backbone : False
 
 optimizer : 
     type : 'AdamW'

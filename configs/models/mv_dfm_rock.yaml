@@ -1,5 +1,6 @@
 type : 'MultiViewDfMFisheye'
 vehicle : 'Rock'
+num_views : 4
 num_ref_frames : 0
 backbone : 
     type : 'ResNet'
@@ -11,7 +12,6 @@ backbone :
     init_cfg : 
       type : 'Pretrained' 
       checkpoint : 'torchvision://resnet50'
-
 neck : 
     type : 'FPN'
     in_channels : [256, 512, 1024, 2048]
@@ -28,16 +28,16 @@ backbone_3d :
 #   out_channels : 256
 
 neck_3d : 
-    type : 'DfMNeck'
+    type : 'DfMNeckConv'
     in_channels : 64
     out_channels : 256
     num_frames : 1  # num_frames = num_ref_frames+1
 valid_sample : True
 temporal_aggregate : 'concat'
-voxel_size : [0.1, 0.1, 0.25]  # n_voxels : [240, 300, 12]
+voxel_size : [0.25, 0.25, 0.25]  # n_voxels : [240, 300, 12]
 anchor_generator : 
     type : 'AlignedAnchor3DRangeGenerator'
-    ranges : &range [[-10.0, -10.0, -3, 10.0, 10.0, 0]]
+    ranges : &range [[-10.0, -10.0, 0, 10.0, 10.0, 3]]
     rotations : [.0]
 bbox_head_3d : 
     type : 'Anchor3DHead'
@@ -106,8 +106,8 @@ train_cfg :
 test_cfg : 
     use_rotate_nms : True
     nms_across_levels : False
-    nms_thr : 0.01
-    score_thr : 0.1
+    nms_thr : 0.05
+    score_thr : 0.2
     min_bbox_size : 0
     nms_pre : 500
     max_num : 100

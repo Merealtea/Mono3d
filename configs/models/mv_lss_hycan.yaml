@@ -6,10 +6,10 @@ backbone :
     C : &C 64
     downsample : 4
 grid_conf :
-    xbound : [-10, 10, 0.1]
-    ybound : [-10, 10, 0.1]
+    xbound : [-10, 10, 0.25]
+    ybound : [-10, 10, 0.25]
     zbound : [0, 3, 3]
-    dbound : [0.25, 10, 0.25]
+    dbound : [0.25, 15, 0.25]
 final_dim : [368, 640] # the image shape after preprocess
 normalizer_clamp_value : 10
 use_quickcumsum : False

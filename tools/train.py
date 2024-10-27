@@ -210,6 +210,7 @@ def main():
     for epoch in range(start_epoch, total_epochs):
         for i, data in tqdm(enumerate(train_loader)):
             optimizer.zero_grad()
+
             to_device(data, device)
             data['img_metas'][0]['epoch'] = epoch
             data["return_loss"] = True
@@ -244,7 +245,7 @@ def main():
             optimizer.step()
             lr_scheduler.step()
 
-        if epoch % eval_interval == 0:
+        if (epoch + 1) % eval_interval == 0 or epoch == 0:
             model.eval()
             # eval model
             with torch.no_grad():
@@ -265,7 +266,7 @@ def main():
                     
                 if (epoch + 1) % 10 == 0 and epoch > 30:
                     torch.save(model.state_dict(), f"{save_path}/epoch_{epoch}.pth")
-                    print(f"Save best model at epoch {epoch}")
+                    print(f"Save best model at epoch {epoch} in {save_path}")
 
                     if cfg["save_backbone"]:
                         torch.save(model.backbone.state_dict(), f"{save_path}/epoch_{epoch}_backbone.pth")
@@ -291,16 +292,20 @@ def main():
                             else:
                                 bbox = bbox['boxes_3d'].tensor.cpu().numpy()[:, :7]
                             gt_bbox = data['gt_bboxes_3d'][idx].cpu().numpy()[:, :7]
-
+                            
                             if cfg['bbox_coordination'] == "CAM":
                                 cam_model = cam_models[img_meta["direction"]]
                                 filename = img_meta['filename']
                                 detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_train_res_path, bboxes_coor = "CAM")
                             elif cfg['bbox_coordination'] == "Lidar":
+                                vis_imgs = []
                                 for filename, direction in zip(img_meta['img_filename'], img_meta['direction']):
                                     cam_model = cam_models[direction]
-                                    detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_train_res_path, bboxes_coor = "Lidar")
-                                    
+                                    img = detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_train_res_path, bboxes_coor = "Lidar")
+                                    vis_imgs.append(img)
+                                vis_imgs = np.concatenate(vis_imgs, axis=1)
+                                cv2.imwrite(os.path.join(bbox_train_res_path, f"{filename.split('/')[-1].split('.jpg')[0]}.jpg"), vis_imgs)
+
                 with torch.no_grad():
                     val_epoch = epoch // eval_interval
                     for i, data in tqdm(enumerate(val_loader)):
@@ -319,11 +324,15 @@ def main():
                             if cfg['bbox_coordination'] == "CAM":
                                 cam_model = cam_models[img_meta["direction"]]
                                 filename = img_meta['filename']
-                                detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_path, bboxes_coor = "CAM")
+                                img = detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_path, bboxes_coor = "CAM")
                             elif cfg['bbox_coordination'] == "Lidar":
+                                vis_imgs = []
                                 for filename, direction in zip(img_meta['img_filename'], img_meta['direction']):
                                     cam_model = cam_models[direction]
-                                    detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_path, bboxes_coor = "Lidar")
+                                    img = detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_path, bboxes_coor = "Lidar")
+                                    vis_imgs.append(img)
+                                vis_imgs = np.concatenate(vis_imgs, axis=1)
+                                cv2.imwrite(os.path.join(bbox_res_path, f"{filename.split('/')[-1].split('.jpg')[0]}.jpg"), vis_imgs)
             model.train()
 
 

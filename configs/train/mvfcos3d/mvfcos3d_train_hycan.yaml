@@ -1,13 +1,13 @@
 model_config : configs/models/mv_dfm_hycan.yaml
 dataset_config : configs/datasets/custom-mv3d.yaml
-data_root : ./data/merged_dataset
+data_root : ./data/merged_dataset_Hycan/
 save_path : ./ckpt/
 annotation_prefix : annotations
 image_prefix : images
 
 bbox_coordination : "Lidar"
 
-gpu_id : 0
+gpu_id : 1
 seed : 2025
 
 epoches : 50

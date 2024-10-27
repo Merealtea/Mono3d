@@ -157,7 +157,7 @@ def detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_path, b
         img = cv2.imread(filename)
         img = plot_rect3d_on_img(img, len(gt_bboxes), gt_bboxes, color=(0, 255, 0))
         img = plot_rect3d_on_img(img, len(bboxes), bboxes, color=(0, 0, 255))
-        cv2.imwrite(os.path.join(bbox_res_path, f"{filename.split('/')[-1].split('.jpg')[0]}.jpg"), img)   
+        # cv2.imwrite(os.path.join(bbox_res_path, f"{filename.split('/')[-1].split('.jpg')[0]}.jpg"), img)   
     
     elif bboxes_coor == "Lidar":
         bboxes = []
@@ -187,8 +187,8 @@ def detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_path, b
         direction = filename.split('/')[-2]
         img = plot_rect3d_on_img(img, len(gt_bboxes), gt_bboxes, color=(0, 255, 0))
         img = plot_rect3d_on_img(img, len(bboxes), bboxes, color=(0, 0, 255))
-        cv2.imwrite(os.path.join(bbox_res_path, f"{filename.split('/')[-1].split('.jpg')[0]}_{direction}.jpg"), img)   
-
+        # cv2.imwrite(os.path.join(bbox_res_path, f"{filename.split('/')[-1].split('.jpg')[0]}_{direction}.jpg"), img)   
+    return img
 
 def turn_gt_to_annos(gts, class_names):
     assert isinstance(gts, list), "gt must be a list"

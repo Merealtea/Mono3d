@@ -197,8 +197,7 @@ class MultiViewLSSFisheye(nn.Module):
         bbox_head_3d.update(train_cfg=train_cfg)
         bbox_head_3d.update(test_cfg=test_cfg)
         # TODO: remove this hack
-        if bbox_head_3d['type'] == 'LIGAAnchor3DHead':
-            bbox_head_3d.update(normalizer_clamp_value=normalizer_clamp_value)
+
         self.bbox_head_3d = build_head(bbox_head_3d)
         self.bev_encode = BevEncode(self.camC, self.outC)
         
@@ -255,6 +254,25 @@ class MultiViewLSSFisheye(nn.Module):
         B, N, D, H, W, C = x.shape
         Nprime = B*N*D*H*W
 
+        for batch in range(B):
+            voxel_features = torch.zeros((self.nx[0], self.nx[1], self.nx[2], C), device=x.device)
+            for view in range(N):
+                geom_feats_view = geom_feats[batch, view]
+                valid_mask_view = valid_mask[batch, view]
+                view_feature = x[batch, view]
+
+                geom_idx = ((geom_feats_view - (self.bx - self.dx/2.)) / self.dx).long()
+
+                # filter out points that are outside box
+                kept = (geom_idx[:, 0] >= 0) & (geom_idx[:, 0] < self.nx[0])\
+                    & (geom_idx[:, 1] >= 0) & (geom_idx[:, 1] < self.nx[1])\
+                    & (geom_idx[:, 2] >= 0) & (geom_idx[:, 2] < self.nx[2])\
+                    & valid_mask_view
+                
+                geom_idx = geom_idx[kept]
+                view_feature = view_feature[kept]
+
+                
         # flatten x
         x = x.reshape(Nprime, C)
 

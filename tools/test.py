@@ -11,8 +11,8 @@ from tqdm import tqdm
 
 from builder.build_dataset import build_dataset
 from builder.build_model import build_detector
-from datetime import datetime
-import pickle
+import cv2
+import numpy as np
 from configs.FisheyeParam import CamModel
 from utilities import init_random_seed, detection_visualization,\
       to_device, turn_gt_to_annos
@@ -129,11 +129,16 @@ def main():
                     filename = img_meta['filename']
                     detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_dir_path, bboxes_coor = "CAM")
                 elif cfg['bbox_coordination'] == "Lidar":
+                    vis_imgs = []
                     for filename, direction in zip(img_meta['img_filename'], img_meta['direction']):
                         cam_model = cam_models[direction]
                         bbox_res_dir_path = os.path.join(bbox_res_path, direction)
-                        detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_dir_path, bboxes_coor = "Lidar")
+                        img = detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_dir_path, bboxes_coor = "Lidar")
+                        vis_imgs.append(img)
+                    vis_imgs = np.concatenate(vis_imgs, axis=1)
+                    cv2.imwrite(os.path.join(bbox_res_path, f"{filename.split('/')[-1].split('.jpg')[0]}.jpg"), vis_imgs)
 
+        
         # Evaluate the result with prediction and ground truth  
         ground_truth = turn_gt_to_annos(ground_truth, val_dataset.CLASSES)
         val_dataset.evaluate(detection_res, ground_truth, metric='kitti')
