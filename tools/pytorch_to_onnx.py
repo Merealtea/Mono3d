@@ -25,6 +25,12 @@ def arg_parse():
 
 args = arg_parse()
 vehicle = args.vehicle
+if vehicle == 'hycan':
+    origin_height = 720
+    origin_width = 1280
+elif vehicle == 'rock':
+    origin_height = 1080
+    origin_width = 1920
 config_path = './configs/models'
 config = os.path.join(config_path, 'mv_dfm_{}.yaml'.format(vehicle))
 with open(config, 'r') as f:
@@ -69,9 +75,10 @@ log_level = logging.INFO
 img_metas = [
     dict(
         img_shape=[(height, width, 3)] * 4,
-        ori_shape=[(720, 1280, 3)] *4,
+        ori_shape=[(origin_height, origin_width, 3)] *4,
         pad_shape=[(pad_height, pad_width, 3)] * 4,
-        scale_factor=[height / 720, height / 720, height / 720, height / 720],
+        scale_factor=[height / origin_height, height / origin_height,
+                       height / origin_height, height / origin_height],
         flip=False,
         keep_ratio=True,
         num_views = 4,
