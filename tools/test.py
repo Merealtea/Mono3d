@@ -109,7 +109,6 @@ def main():
 
         for i, data in tqdm(enumerate(val_loader)):
             to_device(data, device)
-            import pdb; pdb.set_trace()
             bbox_res = model(return_loss=False, rescale=True ,**data)
             detection_res += bbox_res
             del data['img'] 

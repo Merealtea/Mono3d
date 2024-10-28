@@ -450,8 +450,6 @@ class MultiViewDfMFisheye(DfM):
                   prediction_array[:, 7:9],\
                       prediction_array[:, 9]
        
-        cfg['use_rotate_nms'] = True
-        cfg['nms_thr'] = 0.02
         mlvl_bboxes_for_nms = xywhr2xyxyr(LiDARInstance3DBoxes(
             mlvl_bboxes, box_dim=box_code_size).bev)
         
