@@ -52,6 +52,9 @@ def main():
 
     max_epoch = 0
     for file in os.listdir(ckpt_path):
+        if 'best' in file:
+            ckpt_file = os.path.join(ckpt_path, file)
+            break
         if file.endswith(".pth"):
             epoch = int(file.split('_')[-1].split('.')[0])
             if epoch > max_epoch:
@@ -63,10 +66,7 @@ def main():
     save_path = os.path.join(cfg['save_path'], 'val_{}'.format(data_datetime))
     create_folder(save_path)
 
-    # load dataset
-    with open(cfg['dataset_config']) as f:
-        dataset_cfg = yaml.load(f, Loader=yaml.FullLoader)
-
+    # load val dataset
     dataset_cfg["data_root"] = args.val_data_path
     dataset_cfg["ann_prefix"] = cfg["annotation_prefix"]
     dataset_cfg["img_prefix"] = cfg["image_prefix"]   
@@ -75,15 +75,12 @@ def main():
     val_dataset = build_dataset(dataset_cfg)
 
     # set_device
-    device = torch.device(f"cuda:{cfg['gpu_id']}") if torch.cuda.is_available() else torch.device('cpu')
+    device = torch.device(f"cuda:0") if torch.cuda.is_available() else torch.device('cpu')
     
     # load model
-    with open(cfg['model_config']) as f:
-        model_cfg = yaml.load(f, Loader=yaml.FullLoader)
-    
     model_cfg["vehicle"] = cfg["vehicle"]
     model = build_detector(model_cfg)
-    model.load_state_dict(torch.load(ckpt_file))
+    model.load_state_dict(torch.load(ckpt_file, map_location=device))
     model.to_device(device)
     model.eval()
 
@@ -110,6 +107,7 @@ def main():
         for i, data in tqdm(enumerate(val_loader)):
             to_device(data, device)
             bbox_res = model(return_loss=False, rescale=True ,**data)
+            
             detection_res += bbox_res
             del data['img'] 
             ground_truth.append(data)

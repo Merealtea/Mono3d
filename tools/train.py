@@ -80,6 +80,7 @@ def main():
     ckpt_file = None
     start_epoch = 0
     vehicle = None
+    best_valid_loss = 1000
     # set random seeds
     seed = init_random_seed(2025)
     print(f"Set random seed to {seed}")
@@ -250,6 +251,7 @@ def main():
             # eval model
             with torch.no_grad():
                 val_epoch = epoch // eval_interval
+                val_loss = []
                 for i, data in tqdm(enumerate(val_loader)):
                     to_device(data, device)
                     data["return_loss"] = True
@@ -258,12 +260,23 @@ def main():
                     loss_res = model(**data)
                     loss = sum([loss_res[key][0] if isinstance(loss_res[key], list) else loss_res[key] for key in loss_res])
 
+                    val_loss.append(loss.item())
                     # record loss
                     writer.add_scalar('val loss', loss.item(), val_epoch * len(val_loader) + i)
                     for key in loss_res:
                         loss_single = loss_res[key][0] if isinstance(loss_res[key], list) else loss_res[key]
                         writer.add_scalar(f'val {key}', loss_single.item(), val_epoch * len(val_loader) + i)
-                    
+
+                val_loss = np.mean(val_loss)
+                if val_loss < best_valid_loss:
+                    best_valid_loss = val_loss
+                    torch.save(model.state_dict(), f"{save_path}/best.pth")
+                    print(f"Save best model at epoch {epoch} in {save_path}")
+
+                    if cfg["save_backbone"]:
+                        torch.save(model.backbone.state_dict(), f"{save_path}/best_backbone.pth")
+                        print(f"Save backbone at epoch {epoch}")
+                          
                 if (epoch + 1) % 10 == 0 and epoch > 30:
                     torch.save(model.state_dict(), f"{save_path}/epoch_{epoch}.pth")
                     print(f"Save best model at epoch {epoch} in {save_path}")

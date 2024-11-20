@@ -121,7 +121,7 @@ def plot_rect3d_on_img(img,
     """
     line_indices = ((0, 1), (0, 3), (0, 4), (1, 2), (1, 5), (3, 2), (3, 7),
                     (4, 5), (4, 7), (2, 6), (5, 6), (6, 7))
-    rect_corners = rect_corners
+    
     for i in range(num_rects):
         corners = rect_corners[i].astype(np.int32)
         for start, end in line_indices:
@@ -178,10 +178,14 @@ def detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_path, b
 
         for corner in corners:
             pixel_uv = cam_model.cam2image(corner.T).T
+            if len(pixel_uv) < 8:
+                continue
             bboxes.append(pixel_uv)
         gt_bboxes = []
         for corner in gt_corners:
             pixel_uv = cam_model.cam2image(corner.T).T
+            if len(pixel_uv) < 8:
+                continue
             gt_bboxes.append(pixel_uv)
         img = cv2.imread(filename)
         direction = filename.split('/')[-2]

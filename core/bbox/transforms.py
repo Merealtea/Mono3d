@@ -27,7 +27,7 @@ def bbox3d2result(bboxes, scores, labels, attrs=None):
         labels_3d=labels.cpu())
 
     if attrs is not None:
-        result_dict['attrs_3d'] = attrs.cpu()
+        result_dict['std_3d'] = attrs.cpu()
 
     return result_dict
 
