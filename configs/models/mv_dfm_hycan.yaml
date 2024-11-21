@@ -71,9 +71,7 @@ bbox_head_3d :
         type : 'CrossEntropyLoss' 
         use_sigmoid : False 
         loss_weight : 0.2
-    loss_uncertainty : 
-        type : 'GaussianLoss' 
-        loss_weight : 0.2
+
 train_cfg : 
     assigner : 
       -
@@ -108,6 +106,7 @@ train_cfg :
     debug : False
     code_weight : [1.0, 1.0, 0.2, 1.0, 1.0, 0.5, 0.5]
 test_cfg : 
+    box_code_size : 14
     use_rotate_nms : True
     nms_across_levels : False
     nms_thr : 0.05

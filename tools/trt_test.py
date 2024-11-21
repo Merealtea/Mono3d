@@ -14,7 +14,8 @@ from inference_test import TRTModel
 from builder.build_dataset import build_dataset
 from configs.FisheyeParam import CamModel
 from utilities import  detection_visualization, turn_gt_to_annos
-
+import cv2
+import numpy as np
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a detector')
@@ -37,7 +38,11 @@ def main():
     context = cuda.Device(0).make_context()
     ckpt_path = args.last_ckpt
     cfg = yaml.safe_load(open(os.path.join(ckpt_path, 'config', 'train_config.yaml')))
+    model_cfg = yaml.safe_load(open(os.path.join(ckpt_path, 'config', 'model_config.yaml')))
     vehicle = cfg["vehicle"] if args.vehicle is None else args.vehicle
+    box_code_size = model_cfg["test_cfg"]["box_code_size"]
+    nms_thresh = model_cfg["test_cfg"]["nms_thr"]
+    pos_thresh = model_cfg["test_cfg"]["score_thr"]
     cuda.init()
     cam_models = dict(zip(["left", "right", "front", "back"], [CamModel(direction, vehicle) for direction in ["left", "right", "front", "back"]]))
     # load dataset
@@ -47,7 +52,7 @@ def main():
     # load model
     trt_model_path = args.trt_model_path
     # cfx = cuda.Device(0).make_context()
-    trt_model = TRTModel(trt_model_path)
+    trt_model = TRTModel(trt_model_path, box_code_size=box_code_size, nms_thresh=nms_thresh, pos_thresh=pos_thresh)
 
     # Create save folder to save the ckpt
     data_datetime = args.val_data_path.split('/')[-1]
@@ -77,8 +82,6 @@ def main():
     bbox_res_path = os.path.join(save_path, "trt", "val_bbox_pre")
     create_folder(bbox_res_path)
 
-    for direction in ["left", "right", "front", "back"]:
-        create_folder(os.path.join(bbox_res_path, direction))
 
     detection_res = []
     ground_truth = []
@@ -92,23 +95,35 @@ def main():
         ground_truth.append(data)
 
         # save bbox_res
-        for idx ,(bbox, img_meta) in enumerate(zip(bbox_res, data['img_metas'])):
-            # extract bbox from bbox_res
-            if 'img_bbox' in bbox:
-                bbox = bbox['img_bbox']['boxes_3d'].tensor.numpy()[:, :7]
+        for idx ,(result, img_meta) in enumerate(zip(bbox_res, data['img_metas'])):
+            # extract res from bbox_res
+            if 'img_bbox' in result:
+                bbox = result['img_bbox']['boxes_3d'].tensor.numpy()
+                scores = result['img_bbox']['scores_3d'].numpy()
             else:
-                bbox = bbox['boxes_3d'].tensor.numpy()[:, :7]
+                bbox = result['boxes_3d'].tensor.numpy()
+                scores = result['scores_3d'].numpy()
             gt_bbox = data['gt_bboxes_3d'][idx].cpu().numpy()[:, :7]
+            if bbox.shape[1] > 7:
+                vars = bbox[:, 7:9]
+            else:
+                vars = None
+            
             if cfg['bbox_coordination'] == "CAM":
                 cam_model = cam_models[img_meta["direction"]]
                 bbox_res_dir_path = os.path.join(bbox_res_path, img_meta["direction"])
                 filename = img_meta['filename']
-                detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_dir_path, bboxes_coor = "CAM")
+                img = detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_dir_path, bboxes_coor = "CAM", scores = scores, vars=vars)
             elif cfg['bbox_coordination'] == "Lidar":
+                vis_imgs = []
                 for filename, direction in zip(img_meta['img_filename'], img_meta['direction']):
                     cam_model = cam_models[direction]
                     bbox_res_dir_path = os.path.join(bbox_res_path, direction)
-                    detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_dir_path, bboxes_coor = "Lidar")
+                    img = detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_dir_path, bboxes_coor = "Lidar", scores=scores, vars=vars)
+                    vis_imgs.append(img)
+                vis_imgs = np.concatenate(vis_imgs, axis=1)
+                cv2.imwrite(os.path.join(bbox_res_path, f"{filename.split('/')[-1].split('.jpg')[0]}.jpg"), vis_imgs)
+
     context.pop()
 
     # Evaluate the result with prediction and ground truth  

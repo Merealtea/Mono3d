@@ -107,7 +107,9 @@ def plot_rect3d_on_img(img,
                        num_rects,
                        rect_corners,
                        color=(0, 255, 0),
-                       thickness=1):
+                       thickness=1,
+                       scores = None,
+                       vars = None):
     """Plot the boundary lines of 3D rectangular on 2D images.
 
     Args:
@@ -121,6 +123,12 @@ def plot_rect3d_on_img(img,
     """
     line_indices = ((0, 1), (0, 3), (0, 4), (1, 2), (1, 5), (3, 2), (3, 7),
                     (4, 5), (4, 7), (2, 6), (5, 6), (6, 7))
+
+    if scores is not None and len(scores) != num_rects:
+        raise ValueError("The length of scores should be the same as the number of rectangles.")
+    
+    if vars is not None and len(vars) != num_rects:
+        raise ValueError("The length of vars should be the same as the number of rectangles.")
     
     for i in range(num_rects):
         corners = rect_corners[i].astype(np.int32)
@@ -129,13 +137,19 @@ def plot_rect3d_on_img(img,
                 cv2.line(img, (corners[start, 0], corners[start, 1]),
                         (corners[end, 0], corners[end, 1]), color, thickness,
                         cv2.LINE_AA)
+                
+                if scores is not None:
+                    cv2.putText(img, "{:.2f}".format(scores[i]), (corners[0, 0], corners[0, 1]), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+
+                if vars is not None:
+                    cv2.putText(img, "{:.2f}_{:.2f}".format(vars[i][0], vars[i][1]), (corners[0, 0], corners[0, 1] + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
             except:
                 import pdb; pdb.set_trace()
 
     return img.astype(np.uint8)
 
 
-def detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_path, bboxes_coor = "CAM"):
+def detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_path, bboxes_coor = "CAM", scores = None, vars = None):
     if bboxes_coor == "CAM":
         bboxes = []
         bbox[:, :3] = cam_model.cam2world(bbox[:, :3])
@@ -155,16 +169,21 @@ def detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_path, b
             gt_bboxes.append(pixel_uv)
 
         img = cv2.imread(filename)
+
         img = plot_rect3d_on_img(img, len(gt_bboxes), gt_bboxes, color=(0, 255, 0))
-        img = plot_rect3d_on_img(img, len(bboxes), bboxes, color=(0, 0, 255))
-        # cv2.imwrite(os.path.join(bbox_res_path, f"{filename.split('/')[-1].split('.jpg')[0]}.jpg"), img)   
-    
+        img = plot_rect3d_on_img(img, len(bboxes), bboxes, color=(0, 0, 255), scores=scores, vars=vars)
+
     elif bboxes_coor == "Lidar":
         bboxes = []
         depth = cam_model.world2cam(bbox[:, :3].T).T[:, 0]
         gt_depth = cam_model.world2cam(gt_bbox[:, :3].T).T[:, 0]
         bbox = bbox[depth > 0.05]
         gt_bbox = gt_bbox[gt_depth > 0.05]
+
+        if scores is not None:
+            scores = scores[depth > 0.05]
+        if vars is not None:
+            vars = vars[depth > 0.05]
 
         corners = calculate_corners(bbox).reshape(-1, 3)
         gt_corners = calculate_corners(gt_bbox).reshape(-1, 3)
@@ -188,10 +207,10 @@ def detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_path, b
                 continue
             gt_bboxes.append(pixel_uv)
         img = cv2.imread(filename)
-        direction = filename.split('/')[-2]
+
         img = plot_rect3d_on_img(img, len(gt_bboxes), gt_bboxes, color=(0, 255, 0))
-        img = plot_rect3d_on_img(img, len(bboxes), bboxes, color=(0, 0, 255))
-        # cv2.imwrite(os.path.join(bbox_res_path, f"{filename.split('/')[-1].split('.jpg')[0]}_{direction}.jpg"), img)   
+        img = plot_rect3d_on_img(img, len(bboxes), bboxes, color=(0, 0, 255), scores=scores, vars=vars)
+  
     return img
 
 def turn_gt_to_annos(gts, class_names):

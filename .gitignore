@@ -2,5 +2,5 @@ data
 ckpt
 grid
 __pycache__
-*pyc
+*.pyc
 bev
