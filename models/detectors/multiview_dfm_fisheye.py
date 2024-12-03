@@ -434,7 +434,6 @@ class MultiViewDfMFisheye(DfM):
     
     @staticmethod
     def nms_for_bboxes(prediction_array,
-                        box_code_size = 7,
                         max_num=500,
                         score_thr=0.1, 
                         dir_offset=0,
@@ -446,12 +445,13 @@ class MultiViewDfMFisheye(DfM):
                 max_num (int): Maximum number of selected bboxes.
                 use_rotate_nms (bool): Whether to use rotate nms.
         """
+        box_code_size = cfg.get('box_code_size', 7)
         prediction_array = torch.tensor(prediction_array).reshape(-1, box_code_size + 3).to('cuda')
         mlvl_bboxes, mlvl_scores, mlvl_dir_scores = \
             prediction_array[:, :box_code_size],\
-                  prediction_array[:, -4:-2],\
-                      prediction_array[:, -2:-1]
-       
+                  prediction_array[:, -3:-1],\
+                      prediction_array[:, -1:]
+
         mlvl_bboxes_for_nms = xywhr2xyxyr(LiDARInstance3DBoxes(
             mlvl_bboxes, box_dim=box_code_size).bev)
         
@@ -460,12 +460,14 @@ class MultiViewDfMFisheye(DfM):
                                        cfg, mlvl_dir_scores)
         
         bboxes, scores, labels, dir_scores = results
+
         if bboxes.shape[0] > 0:
             dir_rot = limit_period(bboxes[..., 6] - dir_offset,
                                    dir_limit_offset, np.pi)
+            
             bboxes[..., 6] = (
                 dir_rot + dir_offset +
-                np.pi * dir_scores.to(bboxes.dtype))
+                np.pi * dir_scores.to(bboxes.dtype).reshape(dir_rot.shape))
         bboxes = LiDARInstance3DBoxes(bboxes, box_dim=box_code_size)
         bbox_results = [
                 bbox3d2result(bboxes, scores, labels)
