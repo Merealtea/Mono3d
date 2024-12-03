@@ -8,3 +8,26 @@ build
 *.egg-info
 .hypothesis
 *.png
+# Byte-compiled / optimized / DLL files
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+pip-log.txt
+pip-delete-this-directory.txt
+
+.hypothesis/
