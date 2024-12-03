@@ -11,7 +11,7 @@ gpu_id : 1
 seed : 2025
 
 epoches : 90
-batch_size : 16
+batch_size : 8
 
 vehicle :  Hycan
 

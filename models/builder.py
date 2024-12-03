@@ -17,14 +17,15 @@ VOXEL_ENCODERS = MODELS
 MIDDLE_ENCODERS = MODELS
 FUSION_LAYERS = MODELS
 SEGMENTORS = MODELS
-
+VTRANSFORMS = Registry("vtransforms")
 
 def build_backbone(cfg):
     """Build backbone."""
     if cfg['type'] in BACKBONES._module_dict.keys():
         return BACKBONES.build(cfg)
 
-
+def build_vtransform(cfg):
+    return VTRANSFORMS.build(cfg)
 
 def build_neck(cfg):
     """Build neck."""

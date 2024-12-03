@@ -52,10 +52,10 @@ def main():
 
     max_epoch = 0
     for file in os.listdir(ckpt_path):
-        if 'best' in file:
-            ckpt_file = os.path.join(ckpt_path, file)
-            break
         if file.endswith(".pth"):
+            if 'best' in file:
+                ckpt_file = os.path.join(ckpt_path, file)
+                break
             epoch = int(file.split('_')[-1].split('.')[0])
             if epoch > max_epoch:
                 max_epoch = epoch
@@ -95,7 +95,7 @@ def main():
     with torch.no_grad():
 
         # eval model
-        bbox_res_path = os.path.join(save_path, f"{epoch}", "val_bbox_pre")
+        bbox_res_path = os.path.join(save_path, f"{max_epoch}", "val_bbox_pre")
         create_folder(bbox_res_path)
 
         for direction in ["left", "right", "front", "back"]:

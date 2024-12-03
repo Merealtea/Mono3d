@@ -1,6 +1,6 @@
 model_config : configs/models/mv_lss_hycan.yaml
 dataset_config : configs/datasets/custom-mv3d.yaml
-data_root : ./data/merged_dataset
+data_root : ./data/merged_dataset_Hycan/
 save_path : ./ckpt/
 annotation_prefix : annotations
 image_prefix : images
@@ -21,7 +21,7 @@ freeze_backbone : False
 
 optimizer : 
     type : 'AdamW'
-    lr : 0.005
+    lr : 0.0004
     weight_decay : 0.0001
     paramwise_cfg : 
         custom_keys : 

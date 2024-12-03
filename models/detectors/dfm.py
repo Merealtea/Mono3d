@@ -101,8 +101,9 @@ class DfM(BaseDetector):
         self.normalizer_clamp_value = normalizer_clamp_value
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
-        bbox_head_3d.update(train_cfg=train_cfg)
-        bbox_head_3d.update(test_cfg=test_cfg)
+        if 'train_cfg' not in bbox_head_3d:
+            bbox_head_3d.update(train_cfg=train_cfg)
+            bbox_head_3d.update(test_cfg=test_cfg)
         # TODO: remove this hack
         if bbox_head_3d['type'] == 'LIGAAnchor3DHead':
             bbox_head_3d.update(normalizer_clamp_value=normalizer_clamp_value)

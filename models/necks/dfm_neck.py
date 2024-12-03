@@ -309,7 +309,11 @@ class DfMNeckConv(nn.Module):
             list[torch.Tensor]: of shape (N, C_out, N_y, N_x).
         """
         # input x should be concat of features of all the frames
-        x = x.permute(0, 1, 4, 2, 3).contiguous().reshape(-1, self.in_channels[0], x.shape[2], x.shape[3])
+        if isinstance(x, list):
+            x = x[0]
+        
+        if len(x.shape) == 5:
+            x = x.permute(0, 1, 4, 2, 3).contiguous().reshape(-1, self.in_channels[0], x.shape[2], x.shape[3])
         assert x.shape[1] == self.in_channels[0] * self.num_frames
         mono_bev_feat = self.mono_layers(x)
         mono_bev_feat = mono_bev_feat.transpose(-1, -2)

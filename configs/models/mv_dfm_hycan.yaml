@@ -15,7 +15,7 @@ backbone :
 neck : 
     type : 'FPN'
     in_channels : [256, 512, 1024, 2048]
-    out_channels : 64
+    out_channels : 128
     num_outs : 4
 neck_2d : 
 bbox_head_2d : 
@@ -27,11 +27,6 @@ backbone_3d :
 #   in_channels : 64
 #   out_channels : 256
 
-neck_3d : 
-    type : 'DfMNeckConv'
-    in_channels : 64
-    out_channels : 128
-    num_frames : 1  # num_frames = num_ref_frames+1
 valid_sample : True
 temporal_aggregate : 'concat'
 voxel_size : [0.25, 0.25, 0.25]  # n_voxels : [240, 300, 12]
@@ -39,8 +34,15 @@ anchor_generator :
     type : 'AlignedAnchor3DRangeGenerator'
     ranges : &range [[-10.0, -10.0, 0, 10.0, 10.0, 3]]
     rotations : [.0]
+
+neck_3d : 
+    type : 'DfMNeckConv'
+    in_channels : 128
+    out_channels : 128
+    num_frames : 1  # num_frames = num_ref_frames+1
+
 bbox_head_3d : 
-    type : 'GaussianAnchor3DHead'
+    type : 'Anchor3DHead'
     num_classes : 1
     in_channels : 128
     feat_channels : 128
@@ -71,9 +73,7 @@ bbox_head_3d :
         type : 'CrossEntropyLoss' 
         use_sigmoid : False 
         loss_weight : 0.2
-    loss_uncertainty : 
-        type : 'GaussianLoss' 
-        loss_weight : 0.2
+
 train_cfg : 
     assigner : 
       -

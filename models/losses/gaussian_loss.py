@@ -2,10 +2,23 @@
 import torch
 from torch import nn as nn
 from torch.distributions import Normal
-from models.losses.utils import weighted_loss
 from ..builder import LOSSES
 from .utils import weight_reduce_loss
 
+
+def gaussian_func(x, mu, sigma, alpha=2.0):
+    """Calculate the Gaussian function.
+
+    Args:
+        x (torch.Tensor): The input tensor.
+        mu (torch.Tensor): The mean of the Gaussian function.
+        sigma (torch.Tensor): The sigma of the Gaussian function.
+        alpha (float, optional): The coefficient of log(sigma).
+            Defaults to 10.0. Make the sigma keep high level
+    Returns:
+        torch.Tensor: The calculated Gaussian function.
+    """
+    return torch.exp(-0.5 * (alpha * (x - mu) / sigma)**2) / (sigma * (2 * 3.141592654)**0.5)
 
 def gaussian_loss(pred, 
                   target, 
@@ -30,10 +43,10 @@ def gaussian_loss(pred,
     assert pred.size() == target.size() == logstd.size(), 'The size of pred ' \
         f'{pred.size()}, target {target.size()}, and logstd {logstd.size()} ' \
         'are inconsistent.'
-    dist = Normal(pred, torch.exp(logstd))
-    likelihood = dist.log_prob(target)
+  
+    likelihood = torch.log(gaussian_func(pred, target, torch.exp(logstd)))
     if weight is not None:
-        likelihood = likelihood * weight + 0.2*logstd
+        likelihood = likelihood * weight# + 0.2*logstd
 
     loss_likelihood = weight_reduce_loss(likelihood, weight, reduction, avg_factor)
     return -loss_likelihood

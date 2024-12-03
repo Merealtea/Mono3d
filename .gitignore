@@ -4,3 +4,7 @@ grid
 __pycache__
 *pyc
 bev
+build
+*.egg-info
+.hypothesis
+*.png

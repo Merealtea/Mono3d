@@ -10,10 +10,11 @@ from .yolo_bbox_coder import YOLOBBoxCoder
 from .delta_xyzwhlr_bbox_coder import DeltaXYZWLHRBBoxCoder
 from .fcos3d_bbox_coder import FCOS3DBBoxCoder
 from .pgd_bbox_coder import PGDBBoxCoder
+from .centerpoint_bbox_coders import CenterPointBBoxCoder
 
 __all__ = [
     'BaseBBoxCoder', 'PseudoBBoxCoder', 'DeltaXYWHBBoxCoder',
     'LegacyDeltaXYWHBBoxCoder', 'TBLRBBoxCoder', 'YOLOBBoxCoder',
     'BucketingBBoxCoder', 'DistancePointBBoxCoder', 'DeltaXYZWLHRBBoxCoder',
-    'FCOS3DBBoxCoder', 'PGDBBoxCoder'
+    'FCOS3DBBoxCoder', 'PGDBBoxCoder', 'CenterPointBBoxCoder'
 ]

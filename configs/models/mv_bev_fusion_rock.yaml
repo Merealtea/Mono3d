@@ -1,0 +1,173 @@
+type : 'MultiViewBEVFusionFisheye'
+vehicle : 'Rock'
+num_views : 4
+backbone:
+    type: ResNet
+    depth: 50
+    num_stages: 3
+    out_indices: [0, 1, 2] 
+    norm_eval: false
+    frozen_stages: 1
+    init_cfg:
+      type: Pretrained
+      checkpoint: torchvision://resnet50
+neck:
+    type: SECONDFPN
+    in_channels: [256, 512, 1024]
+    out_channels: [128, 128, 128]
+    upsample_strides: [1, 2, 4]    
+vtransform:
+    type: FisheyeLSSTransform
+    in_channels: 384
+    out_channels: 64
+    image_size : [1080, 1920]
+    final_size : [1104, 1920] # the image shape after preprocess
+    ratio : 12
+    xbound : [-10, 10, 0.25]
+    ybound : [-10, 10, 0.25]
+    zbound : [-3, 3, 6]
+    dbound : [0.25, 5, 0.25]
+    downsample: 1
+decoder:
+  backbone:
+    type: GeneralizedResNet
+    in_channels: 64
+    blocks:
+      - [2, 128, 1]
+      - [2, 256, 2]
+      - [2, 512, 1]
+  neck:
+    type: LSSFPN
+    in_indices: [-1, 0]
+    in_channels: [512, 128]
+    out_channels: 256
+    scale_factor: 1
+
+bbox_head_3d :
+    type: CenterHead
+    in_channels: 256
+    train_cfg:
+      point_cloud_range: &point_cloud_range [-10, -10, -3, 10, 10, 3]
+      grid_size: [80, 80, 1]
+      voxel_size: &voxel_size [0.25, 0.25, 0.2]
+      out_size_factor: &out_size_factor 1
+      dense_reg: 1
+      gaussian_overlap: 0.1
+      max_objs: 500
+      min_radius: 3
+      code_weights: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 0.2]
+    test_cfg:
+      post_center_limit_range: *point_cloud_range
+      max_per_img: 500
+      max_pool_nms: false
+      min_radius: [0.175]
+      score_threshold: 0.1
+      out_size_factor: *out_size_factor
+      voxel_size: *voxel_size
+      nms_type: rotate
+      pre_max_size: 1000
+      post_max_size: 83
+      nms_thr: 0.2
+    tasks:
+      - ["pedestrian"]
+    common_heads:
+      reg: [2, 2]
+      height: [1, 2]
+      dim: [3, 2]
+      rot: [2, 2]
+
+    share_conv_channel: 64
+    bbox_coder:
+      type: CenterPointBBoxCoder
+      pc_range : *point_cloud_range 
+      post_center_range: *point_cloud_range
+      max_num: 500
+      score_threshold: 0.1
+      out_size_factor: *out_size_factor
+      voxel_size: *voxel_size
+      code_size: 7
+    separate_head:
+      type: SeparateHead
+      init_bias: -2.19
+      final_kernel: 3
+    loss_cls:
+      type: GaussianFocalLoss
+      reduction: mean
+    loss_bbox:
+      type: L1Loss
+      reduction: mean
+      loss_weight: 0.25
+    norm_bbox: true
+
+# bbox_head_3d : 
+#     type : 'Anchor3DHead'
+#     num_classes : 1
+#     in_channels : 256
+#     feat_channels : 256
+#     use_direction_classifier : True
+#     anchor_generator : 
+#         type : 'AlignedAnchor3DRangeGenerator'
+#         ranges : [[-10.0, -10.0, -3, 10.0, 10.0, 3]]
+#         sizes : [
+#             [0.5, 0.5, 1.74],  # pedestrian
+#         ]
+#         rotations : [0, 1.57]
+#         reshape_out : False
+#     diff_rad_by_sin : True
+#     dir_offset : -0.7854  # -pi / 4
+#     bbox_coder : 
+#       type : 'DeltaXYZWLHRBBoxCoder'
+#     loss_cls : 
+#         type : 'FocalLoss'
+#         use_sigmoid : True
+#         gamma : 2.0
+#         alpha : 0.25
+#         loss_weight : 1.0
+#     loss_bbox : 
+#       type : 'SmoothL1Loss' 
+#       beta : 0.1111111111111111
+#       loss_weight : 2.0
+#     loss_dir : 
+#         type : 'CrossEntropyLoss' 
+#         use_sigmoid : False 
+#         loss_weight : 0.2
+# train_cfg : 
+#     assigner : 
+#       -
+#         # for Pedestrian
+#             type : 'MaxIoUAssigner'
+#             iou_calculator : 
+#               type : 'BboxOverlapsNearest3D'
+#             pos_iou_thr : 0.5
+#             neg_iou_thr : 0.35
+#             min_pos_iou : 0.35
+#             ignore_iof_thr : -1
+#       # -
+#       #   # for Cyclist
+#       #       type : 'MaxIoUAssigner'
+#       #       iou_calculator : 
+#       #         type : 'BboxOverlapsNearest3D'
+#       #       pos_iou_thr : 0.5
+#       #       neg_iou_thr : 0.35
+#       #       min_pos_iou : 0.35
+#       #       ignore_iof_thr : -1
+#       # -
+#       #   # for Car
+#       #       type : 'MaxIoUAssigner'
+#       #       iou_calculator : 
+#       #         type : 'BboxOverlapsNearest3D'
+#       #       pos_iou_thr : 0.6
+#       #       neg_iou_thr : 0.45
+#       #       min_pos_iou : 0.45
+#       #       ignore_iof_thr : -1
+#     allowed_border : 0
+#     pos_weight : -1
+#     debug : False
+# test_cfg : 
+#     use_rotate_nms : True
+#     nms_across_levels : False
+#     nms_thr : 0.01
+#     score_thr : 0.1
+#     min_bbox_size : 0
+#     nms_pre : 500
+#     max_num : 100

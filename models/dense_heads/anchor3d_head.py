@@ -255,6 +255,8 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
         pos_bbox_targets = bbox_targets[pos_inds]
         pos_bbox_weights = bbox_weights[pos_inds]
 
+        # import pdb; pdb.set_trace()
+
         # dir loss
         if self.use_direction_classifier:
             dir_cls_preds = dir_cls_preds.permute(0, 2, 3, 1).reshape(-1, 2)

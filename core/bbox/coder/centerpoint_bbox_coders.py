@@ -1,8 +1,8 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import torch
 
-from core.bbox import BaseBBoxCoder
-from core.bbox.builder import BBOX_CODERS
+from .base_bbox_coder import BaseBBoxCoder
+from ..builder import BBOX_CODERS
 
 
 @BBOX_CODERS.register_module()
@@ -198,12 +198,12 @@ class CenterPointBBoxCoder(BaseBBoxCoder):
             thresh_mask = final_scores > self.score_threshold
 
         if self.post_center_range is not None:
-            self.post_center_range = torch.tensor(
+            post_center_range = torch.tensor(
                 self.post_center_range, device=heat.device)
             mask = (final_box_preds[..., :3] >=
-                    self.post_center_range[:3]).all(2)
+                    post_center_range[:3]).all(2)
             mask &= (final_box_preds[..., :3] <=
-                     self.post_center_range[3:]).all(2)
+                     post_center_range[3:]).all(2)
 
             predictions_dicts = []
             for i in range(batch):

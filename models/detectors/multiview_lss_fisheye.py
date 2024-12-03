@@ -98,25 +98,25 @@ class BevEncode(nn.Module):
     def __init__(self, inC, outC):
         super(BevEncode, self).__init__()
 
-        # trunk = resnet18(pretrained=False, zero_init_residual=True)
-        # self.conv1 = nn.Conv2d(inC, 64, kernel_size=7, stride=2, padding=3,
-        #                        bias=False)
-        # self.bn1 = trunk.bn1
-        # self.relu = trunk.relu
+        trunk = resnet18(pretrained=False, zero_init_residual=True)
+        self.conv1 = nn.Conv2d(inC, 64, kernel_size=7, stride=2, padding=3,
+                               bias=False)
+        self.bn1 = trunk.bn1
+        self.relu = trunk.relu
 
-        # self.layer1 = trunk.layer1
-        # self.layer2 = trunk.layer2
-        # self.layer3 = trunk.layer3
+        self.layer1 = trunk.layer1
+        self.layer2 = trunk.layer2
+        self.layer3 = trunk.layer3
 
-        # self.up1 = Up(64+256, 256, scale_factor=4)
-        # self.up2 = nn.Sequential(
-        #     nn.Upsample(scale_factor=2, mode='bilinear',
-        #                       align_corners=True),
-        #     nn.Conv2d(256, 256, kernel_size=3, padding=1, bias=False),
-        #     nn.BatchNorm2d(256),
-        #     nn.ReLU(inplace=True),
-        #     nn.Conv2d(256, outC, kernel_size=1, padding=0),
-        # )
+        self.up1 = Up(64+256, 256, scale_factor=4)
+        self.up2 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='bilinear',
+                              align_corners=True),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, outC, kernel_size=1, padding=0),
+        )
 
         self.conv1 = nn.Sequential(
             nn.Conv2d(inC, 128, kernel_size=1, padding=0, bias=False),
@@ -133,19 +133,19 @@ class BevEncode(nn.Module):
         )
 
     def forward(self, x):
-        # x = self.conv1(x)
-        # x = self.bn1(x)
-        # x = self.relu(x)
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
 
-        # x1 = self.layer1(x)
-        # x = self.layer2(x1)
-        # x = self.layer3(x)
+        x1 = self.layer1(x)
+        x = self.layer2(x1)
+        x = self.layer3(x)
 
-        # x = self.up1(x, x1)
-        # x = self.up2(x)
-        x1 = self.conv1(x)
-        x = torch.cat([x, x1], dim=1)
-        x = self.residual(x)
+        x = self.up1(x, x1)
+        x = self.up2(x)
+        # x1 = self.conv1(x)
+        # x = torch.cat([x, x1], dim=1)
+        # x = self.residual(x)
         return x
 
 
@@ -255,7 +255,6 @@ class MultiViewLSSFisheye(nn.Module):
         Nprime = B*N*D*H*W
 
         for batch in range(B):
-            voxel_features = torch.zeros((self.nx[0], self.nx[1], self.nx[2], C), device=x.device)
             for view in range(N):
                 geom_feats_view = geom_feats[batch, view]
                 valid_mask_view = valid_mask[batch, view]

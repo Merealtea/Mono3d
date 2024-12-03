@@ -99,6 +99,8 @@ def main():
             model_cfg = yaml.safe_load(f)
 
         for file in os.listdir(save_path):
+            if 'best' in file and file.endswith(".pth"):
+                continue
             if file.endswith(".pth"):
                 epoch = int(file.split('_')[-1].split('.')[0])
                 if epoch > start_epoch:
@@ -109,10 +111,6 @@ def main():
             cfg = yaml.safe_load(f)
             vehicle = cfg["vehicle"]
 
-        # set random seeds
-        seed = init_random_seed(cfg['seed'])
-        print(f"Set random seed to {seed}")
-        
         # Create save folder to save the ckpt
         save_path = cfg['save_path']
         save_path = os.path.join(save_path, datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
@@ -189,6 +187,7 @@ def main():
 
     model.to_device(device)
     model.train()
+    best_epoch = None
 
     if cfg["freeze_backbone"]:
         for name, param in model.backbone.named_parameters():
@@ -211,7 +210,6 @@ def main():
     for epoch in range(start_epoch, total_epochs):
         for i, data in tqdm(enumerate(train_loader)):
             optimizer.zero_grad()
-
             to_device(data, device)
             data['img_metas'][0]['epoch'] = epoch
             data["return_loss"] = True
@@ -270,6 +268,7 @@ def main():
                 val_loss = np.mean(val_loss)
                 if val_loss < best_valid_loss:
                     best_valid_loss = val_loss
+                    best_epoch = epoch
                     torch.save(model.state_dict(), f"{save_path}/best.pth")
                     print(f"Save best model at epoch {epoch} in {save_path}")
 
@@ -347,7 +346,9 @@ def main():
                                 vis_imgs = np.concatenate(vis_imgs, axis=1)
                                 cv2.imwrite(os.path.join(bbox_res_path, f"{filename.split('/')[-1].split('.jpg')[0]}.jpg"), vis_imgs)
             model.train()
-
+    print("Training finished.")
+    writer.close()
+    print('Best epoch is ', best_epoch) 
 
 if __name__ == '__main__':
     main()

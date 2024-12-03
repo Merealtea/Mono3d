@@ -341,7 +341,8 @@ class MultiViewDfMFisheye(DfM):
             losses = self.bbox_head_3d.loss(*outs, gt_bboxes_3d, gt_labels_3d,
                                             img_metas)
         else:
-            loss_inputs = [gt_bboxes_3d, gt_labels_3d, outs]
+            gt_bboxes_3d = [LiDARInstance3DBoxes(box, box_dim=box.shape[-1]) for box in gt_bboxes_3d]
+            loss_inputs = [gt_bboxes_3d, gt_labels_3d, outs, img_metas]
             losses = self.bbox_head_3d.loss(*loss_inputs)
         if self.with_depth_head_2d:
             fv_feat = feats[-1]
