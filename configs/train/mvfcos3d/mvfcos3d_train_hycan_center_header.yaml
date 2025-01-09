@@ -1,4 +1,4 @@
-model_config : configs/models/mv_bev_fusion.yaml
+model_config : configs/models/mv_dfm_hycan_center_header.yaml
 dataset_config : configs/datasets/custom-mv3d.yaml
 data_root : ./data/merged_dataset_Hycan/
 save_path : ./ckpt/
@@ -7,11 +7,12 @@ image_prefix : images
 
 bbox_coordination : "Lidar"
 
-gpu_id : 0
+gpu_id : 1
 seed : 2025
 
 epoches : 50
-batch_size : 4
+batch_size : 8
+
 vehicle :  Hycan
 
 # backbone setup
@@ -38,7 +39,8 @@ lr_config :
   warmup_iters : 500
   warmup_ratio : 0.3333333333333333
   policy : 'step'
-  step : [5, 22]
+  step : [16, 22]
+
 
 eval_interval : 10
 save_interval : 10

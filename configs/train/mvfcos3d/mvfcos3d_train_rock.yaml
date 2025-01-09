@@ -11,7 +11,7 @@ gpu_id : 0
 seed : 2025
 
 epoches : 50
-batch_size : 4
+batch_size : 8
 
 vehicle : Rock  # Hycan
 

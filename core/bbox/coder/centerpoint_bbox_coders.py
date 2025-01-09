@@ -93,7 +93,7 @@ class CenterPointBBoxCoder(BaseBBoxCoder):
         topk_xs = self._gather_feat(topk_xs.view(batch, -1, 1),
                                     topk_ind).view(batch, K)
 
-        return topk_score, topk_inds, topk_clses, topk_ys, topk_xs
+        return topk_score, topk_inds, topk_clses, topk_xs, topk_ys
 
     def _transpose_and_gather_feat(self, feat, ind):
         """Given feats and indexes, returns the transposed and gathered feats.
@@ -143,6 +143,7 @@ class CenterPointBBoxCoder(BaseBBoxCoder):
         Returns:
             list[dict]: Decoded boxes.
         """
+
         batch, cat, _, _ = heat.size()
 
         scores, inds, clses, ys, xs = self._topk(heat, K=self.max_num)

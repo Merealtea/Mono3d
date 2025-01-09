@@ -452,9 +452,9 @@ class CenterHead(BaseModule):
             (gt_bboxes_3d.gravity_center, gt_bboxes_3d.tensor[:, 3:]), dim=1
         ).to(device)
         max_objs = self.train_cfg["max_objs"] * self.train_cfg["dense_reg"]
-        grid_size = torch.tensor(self.train_cfg["grid_size"])
-        pc_range = torch.tensor(self.train_cfg["point_cloud_range"])
-        voxel_size = torch.tensor(self.train_cfg["voxel_size"])
+        grid_size = torch.tensor(self.train_cfg["grid_size"]).to(device)
+        pc_range = torch.tensor(self.train_cfg["point_cloud_range"]).to(device)
+        voxel_size = torch.tensor(self.train_cfg["voxel_size"]).to(device)
 
         feature_map_size = torch.div(
             grid_size[:2],
@@ -473,7 +473,6 @@ class CenterHead(BaseModule):
                 ]
             )
             flag += len(class_name)
-
         task_boxes = []
         task_classes = []
         flag2 = 0
@@ -487,6 +486,8 @@ class CenterHead(BaseModule):
             task_boxes.append(torch.cat(task_box, axis=0).to(device))
             task_classes.append(torch.cat(task_class).long().to(device))
             flag2 += len(mask)
+
+
         draw_gaussian = draw_heatmap_gaussian
         heatmaps, anno_boxes, inds, masks = [], [], [], []
 
@@ -616,7 +617,6 @@ class CenterHead(BaseModule):
             # heatmap[len(heatmap) // 2, len(heatmap) // 2] = 255
             # map = np.concatenate([preds_map, heatmap], axis=1) * 200
             # cv2.imwrite("heatmap.png", map)
-            # import pdb; pdb.set_trace()
 
             target_box = anno_boxes[task_id]
             # reconstruct the anno_box from multiple reg heads

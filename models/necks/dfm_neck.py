@@ -247,6 +247,64 @@ class DfMNeckMeanPool(nn.Module):
         """Initialize weights of neck."""
         pass
 
+@NECKS.register_module()
+class DfMNeckSUMPool(nn.Module):
+    """Dual-path neck for monocular and stereo bev fusion in DfM.
+
+    Args:
+        in_channels (int): Input channels of multi-scale feature map.
+        out_channels (int): Output channels of multi-scale feature map.
+    """
+
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 norm_cfg=dict(type='BN3d'),
+                 num_frames=2):
+        super().__init__()
+        if not isinstance(in_channels, list):
+            in_channels = [in_channels, in_channels * 2, in_channels * 4]
+        self.in_channels = in_channels
+        self.num_frames = num_frames
+        # self.mono_layers = nn.Sequential(
+        #     ResModule(in_channels[0], norm_cfg=norm_cfg),
+        #     ConvModule(
+        #         in_channels=in_channels[0],
+        #         out_channels=out_channels,
+        #         kernel_size=3,
+        #         stride=(1, 1, 2),
+        #         padding=1,
+        #         conv_cfg=dict(type='Conv3d'),
+        #         norm_cfg=norm_cfg,
+        #         act_cfg=dict(type='ReLU', inplace=True)),
+        # )
+
+
+    def forward(self, x):
+        """Forward function.
+
+        Args:
+            x (torch.Tensor): of shape (N, C_in, N_x, N_y, N_z).
+
+        Returns:
+            list[torch.Tensor]: of shape (N, C_out, N_y, N_x).
+        """
+        # input x should be concat of features of all the frames
+        assert x.shape[1] == self.in_channels[0] * self.num_frames
+ 
+        # mono_bev_feat = self.mono_layers(x[:, :self.in_channels[0]])
+        # import pdb; pdb.set_trace()
+        mono_bev_feat = x.sum(dim=4, keepdim=True)
+        assert mono_bev_feat.shape[-1] == 1
+        mono_bev_feat = mono_bev_feat[..., 0].transpose(-1, -2)
+        # import pdb; pdb.set_trace()
+        return [mono_bev_feat]
+
+    def init_weights(self):
+        """Initialize weights of neck."""
+        pass
+
+
 
 @NECKS.register_module()
 class DfMNeckConv(nn.Module):

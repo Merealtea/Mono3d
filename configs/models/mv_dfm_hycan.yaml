@@ -108,7 +108,7 @@ train_cfg :
     debug : False
     code_weight : [1.0, 1.0, 0.2, 1.0, 1.0, 0.5, 0.5]
 test_cfg : 
-    box_code_size : 14
+    box_code_size : 7
     use_rotate_nms : True
     nms_across_levels : False
     nms_thr : 0.05

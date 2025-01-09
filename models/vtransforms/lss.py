@@ -143,7 +143,7 @@ class FisheyeLSSTransform(FisheyeTransform):
 
         # depth_img = depth[:4].argmax(dim=1) * 2
         # depth_img = torch.cat([depth_img[0], depth_img[1],
-        #                         depth_img[2], depth_img[3]], dim=0).detach().cpu().numpy()
+        #                         depth_img[2], depth_img[3]], dim=1).detach().cpu().numpy()
         # import cv2
         # cv2.imwrite("depth_img.png", depth_img)
         
