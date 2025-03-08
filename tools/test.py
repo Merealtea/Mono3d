@@ -106,6 +106,7 @@ def main():
 
         for i, data in tqdm(enumerate(val_loader)):
             to_device(data, device)
+            
             bbox_res = model(return_loss=False, rescale=True ,**data)
             
             detection_res += bbox_res

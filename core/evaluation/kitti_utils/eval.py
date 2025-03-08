@@ -689,7 +689,10 @@ def kitti_eval(gt_annos,
     overlap_0_3 = np.array([[0.7, 0.5, 0.5, 0.7, 0.5],
                             [0.35, 0.35, 0.25, 0.5, 0.25],
                             [0.35, 0.35, 0.25, 0.5, 0.25]])
-    min_overlaps = np.stack([overlap_0_7, overlap_0_5, overlap_0_3], axis=0)  # [2, 3, 5]
+    overlap_0_1 = np.array([[0.7, 0.5, 0.5, 0.7, 0.5],
+                            [0.1, 0.1, 0.25, 0.5, 0.25],
+                            [0.1, 0.1, 0.25, 0.5, 0.25]])
+    min_overlaps = np.stack([overlap_0_7, overlap_0_5, overlap_0_3, overlap_0_1], axis=0)  # [2, 3, 5]
     class_to_name = {
         0: 'Car',
         1: 'Pedestrian',

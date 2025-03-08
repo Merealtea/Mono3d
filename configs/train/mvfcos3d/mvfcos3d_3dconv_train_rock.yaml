@@ -1,6 +1,6 @@
-model_config : configs/models/mv_dfm_3dconv_hycan.yaml
+model_config : configs/models/mv_dfm_3dconv_rock.yaml
 dataset_config : configs/datasets/custom-mv3d.yaml
-data_root : ./data/merged_dataset_Hycan/
+data_root : ./data/merged_dataset_Rock/
 save_path : ./ckpt/
 annotation_prefix : annotations
 image_prefix : images
@@ -10,10 +10,10 @@ bbox_coordination : "Lidar"
 gpu_id : 0
 seed : 2025
 
-epoches : 30
-batch_size : 32
+epoches : 50
+batch_size : 4
 
-vehicle :  Hycan
+vehicle :  Rock
 
 # backbone setup
 save_backbone : False
@@ -21,7 +21,7 @@ freeze_backbone : False
 
 optimizer : 
     type : 'AdamW'
-    lr : 0.005
+    lr : 0.003
     weight_decay : 0.0001
     paramwise_cfg : 
         custom_keys : 

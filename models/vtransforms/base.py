@@ -147,6 +147,7 @@ class BaseTransform(nn.Module):
         # flatten indices
         geom_feats = ((geom_feats - (self.bx - self.dx / 2.0)) / self.dx).long()
         geom_feats = geom_feats.view(Nprime, 3)
+
         batch_ix = torch.cat(
             [
                 torch.full([Nprime // B, 1], ix, device=x.device, dtype=torch.long)
@@ -180,7 +181,7 @@ class BaseTransform(nn.Module):
         # cv2.imwrite('front_kept_img.png', kept_img[2])
         # cv2.imwrite('back_kept_img.png', kept_img[3])
         # import pdb; pdb.set_trace()
-
+        
         x = bev_pool(x, geom_feats, B, self.nx[2], self.nx[0], self.nx[1])
         # ones = bev_pool(ones, geom_feats, B, self.nx[2], self.nx[0], self.nx[1])
         # ones = torch.cat(ones.unbind(dim=2), 1)
@@ -255,7 +256,6 @@ class FisheyeTransform(BaseTransform):
 
         frum_points = torch.stack(frum_points, dim=0)
         frum_points = torch.stack([frum_points] * B, dim = 0)
-
         return frum_points
 
     def get_cam_feats(self, x):
@@ -275,7 +275,7 @@ class FisheyeTransform(BaseTransform):
             camera_models=cam_models, 
             camera_seq=img_metas[0]['direction'],
         )
-
+        
         x = self.get_cam_feats(img, img_metas)
 
         use_depth = False

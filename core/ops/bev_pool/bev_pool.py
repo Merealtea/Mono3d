@@ -89,6 +89,7 @@ def bev_pool(feats, coords, B, D, H, W):
         + coords[:, 2] * B
         + coords[:, 3]
     )
+
     indices = ranks.argsort()
     feats, coords, ranks = feats[indices], coords[indices], ranks[indices]
 

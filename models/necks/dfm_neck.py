@@ -183,7 +183,7 @@ class DfMNeckMono(nn.Module):
         """
         # input x should be concat of features of all the frames
         assert x.shape[1] == self.in_channels[0] * self.num_frames
-        mono_bev_feat = self.mono_layers(x[:, :self.in_channels[0]])
+        mono_bev_feat = self.mono_layers(x)
         assert mono_bev_feat.shape[-1] == 1
         mono_bev_feat = mono_bev_feat[..., 0].transpose(-1, -2)
         return [mono_bev_feat]

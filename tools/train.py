@@ -209,7 +209,6 @@ def main():
     # train model
     for epoch in range(start_epoch, total_epochs):
         for i, data in tqdm(enumerate(train_loader)):
-            optimizer.zero_grad()
             to_device(data, device)
             data['img_metas'][0]['epoch'] = epoch
             data["return_loss"] = True
@@ -226,23 +225,22 @@ def main():
             ############################################
 
             loss_res = model(**data)
-
             loss = sum([loss_res[key][0] if isinstance(loss_res[key], list) else loss_res[key] for key in loss_res])
             print("Epoch: ", epoch, "Iter: ", i, "Loss: ", loss.item())
 
-            # record loss
+
+            loss.backward()
+
             writer.add_scalar('train loss', loss.item(), epoch * len(train_loader) + i)
             for key in loss_res:
                 loss_single = loss_res[key][0] if isinstance(loss_res[key], list) else loss_res[key]
                 writer.add_scalar(f'train {key}', loss_single.item(), epoch * len(train_loader) + i)
                 print(f"   Loss {key}: {loss_single.item()}")   
-
-            loss.backward()
             if grad_clip_cfg is not None:
                 clip_grads(model.parameters(), grad_clip_cfg)
-            
             optimizer.step()
             lr_scheduler.step()
+            optimizer.zero_grad()
 
         if (epoch + 1) % eval_interval == 0 or epoch == 0:
             model.eval()
@@ -276,7 +274,7 @@ def main():
                         torch.save(model.backbone.state_dict(), f"{save_path}/best_backbone.pth")
                         print(f"Save backbone at epoch {epoch}")
                           
-                if (epoch + 1) % 10 == 0 and epoch > 30:
+                if (epoch + 1) % 10 == 0:
                     torch.save(model.state_dict(), f"{save_path}/epoch_{epoch}.pth")
                     print(f"Save best model at epoch {epoch} in {save_path}")
 

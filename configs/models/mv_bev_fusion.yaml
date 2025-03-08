@@ -3,18 +3,18 @@ vehicle : 'Hycan'
 num_views : 4
 backbone : 
     type : 'ResNet'
-    depth : 50
-    num_stages : 4
+    depth : 34
+    num_stages : 3
     out_indices : [0, 1, 2]
     frozen_stages : 1
     norm_eval : True
     init_cfg : 
       type : 'Pretrained' 
-      checkpoint : 'torchvision://resnet50'
+      checkpoint : 'torchvision://resnet34'
 neck:
     type: SECONDFPN
-    in_channels: [256, 512, 1024]
-    out_channels: [128, 128, 128]
+    in_channels: [64, 128, 256]
+    out_channels: [32, 32, 32]
     upsample_strides: [1, 2, 4] 
 
 # neck : 
@@ -24,29 +24,29 @@ neck:
 #     num_outs : 4
 vtransform:
     type: FisheyeLSSTransform
-    in_channels: 384
-    out_channels: 128
+    in_channels: 96
+    out_channels: 32
     image_size : [720, 1280]
     final_size : [736, 1280] # the image shape after preprocess
     ratio : 8                                                                                                                                                                                                                                                                                                                             
     xbound : [-10, 10, 0.25]
     ybound : [-10, 10, 0.25]
     zbound : [-3, 3, 6]
-    dbound : [0.25, 10, 0.25]
+    dbound : [0.25, 8, 0.25]
     downsample: 1
 decoder:
   backbone:
     type: GeneralizedResNet
-    in_channels: 128
+    in_channels: 32
     blocks:
+      - [2, 32, 1]
+      - [2, 64, 2]
       - [2, 128, 1]
-      - [2, 256, 2]
-      - [2, 512, 1]
   neck:
     type: LSSFPN
     in_indices: [-1, 0]
-    in_channels: [512, 128]
-    out_channels: 256
+    in_channels: [128, 32]
+    out_channels: 32
     scale_factor: 1
     # type : 'DfMNeckConv'
     # in_channels : [128, 256, 512]
@@ -61,7 +61,7 @@ decoder:
 
 bbox_head_3d :
     type: CenterHead
-    in_channels: 256
+    in_channels: 32
     train_cfg:
       point_cloud_range: &point_cloud_range [-10, -10, -3, 10, 10, 3]
       grid_size: [80, 80, 1]

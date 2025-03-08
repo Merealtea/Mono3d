@@ -1,4 +1,4 @@
-from torchvision.models import resnet50, resnet101
+from torchvision.models import resnet50, resnet101, resnet34
 import torch.nn as nn
 from copy import deepcopy
 from ..builder import BACKBONES
@@ -15,6 +15,8 @@ class ResNet(nn.Module):
             self.resnet = resnet50(pretrained=pretrained)
         elif depth == 101:
             self.resnet = resnet101(pretrained=pretrained)
+        elif depth == 34:
+            self.resnet =  resnet34(pretrained=pretrained)
 
         self.num_stage = num_stages
         self.out_indices = out_indices
