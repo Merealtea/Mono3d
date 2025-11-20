@@ -12,6 +12,7 @@ from .losses import *  # noqa: F401,F403
 from .model_utils import *  # noqa: F401,F403
 from .necks import *  # noqa: F401,F403
 from .vtransforms import *  # noqa: F401,F403
+from .fusion_modules import *  # noqa: F401,F403
 
 __all__ = [
     'BACKBONES', 'NECKS', 'ROI_EXTRACTORS', 'SHARED_HEADS', 'HEADS', 'LOSSES',

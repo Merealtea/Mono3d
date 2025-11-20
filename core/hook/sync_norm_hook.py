@@ -17,7 +17,7 @@ def get_norm_states(module):
     return async_norm_states
 
 
-@HOOKS.register_module()
+@HOOKS.register_module(force=True)
 class SyncNormHook(Hook):
     """Synchronize Norm states after training epoch, currently used in YOLOX.
 

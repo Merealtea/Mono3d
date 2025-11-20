@@ -32,7 +32,7 @@ def gaussian_focal_loss(pred: Tensor,
     eps = 1e-12
     pos_weights = gaussian_target.eq(1)
     neg_weights = (1 - gaussian_target).pow(gamma)
-
+    
     pos_loss = -(pred + eps).log() * (1 - pred).pow(alpha) * pos_weights
     neg_loss = -(1 - pred + eps).log() * pred.pow(alpha) * neg_weights
     return pos_weight * pos_loss + neg_weight * neg_loss

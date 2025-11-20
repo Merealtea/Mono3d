@@ -3,7 +3,7 @@ from mmcv.parallel import is_module_wrapper
 from mmcv.runner import HOOKS, Hook
 
 
-@HOOKS.register_module()
+@HOOKS.register_module(force=True)
 class SetEpochInfoHook(Hook):
     """Set runner's epoch information to the model."""
 

@@ -2,7 +2,8 @@ from datasets import *
 
 datasets = {
     'CustomMonoDataset': CustomMonoDataset,
-    'CustomMV3DDataset': CustomMV3DDataset
+    'CustomMV3DDataset': CustomMV3DDataset,
+    'UnifiedMV3DDataset': UnifiedMV3DDataset,
 }
 
 

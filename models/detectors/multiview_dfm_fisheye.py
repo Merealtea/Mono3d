@@ -3,7 +3,7 @@ import numpy as np
 import torch
 
 from core import bbox3d2result, build_prior_generator
-from ..dense_heads import CenterHead, GaussianAnchor3DHead
+from ..dense_heads import CenterHead, TransFusionHead
 from ..fusion_layers.point_fusion import (point_sample_fisheye,
                                                        voxel_sample)
 from ..builder import DETECTORS
@@ -43,7 +43,8 @@ class MultiViewDfMFisheye(DfM):
                 #  img_shape = None,
                  num_views=4,
                  num_ref_frames=0,
-                 init_cfg=None):
+                 init_cfg=None, 
+                 **kwargss):
         super().__init__(
             backbone=backbone,
             neck=neck,
@@ -59,6 +60,7 @@ class MultiViewDfMFisheye(DfM):
             test_cfg=test_cfg,
             pretrained=pretrained,
             init_cfg=init_cfg)
+
         self.voxel_size = voxel_size
         self.num_views = num_views
         self.num_ref_frames = num_ref_frames
@@ -336,14 +338,21 @@ class MultiViewDfMFisheye(DfM):
                       **kwargs):
         feats = self.extract_feat(img, img_metas)
         bev_feat = feats[0]
-        outs = self.bbox_head_3d([bev_feat])
-        if not isinstance(self.bbox_head_3d, CenterHead):
-            losses = self.bbox_head_3d.loss(*outs, gt_bboxes_3d, gt_labels_3d,
-                                            img_metas)
-        else:
+        
+        if isinstance(self.bbox_head_3d, TransFusionHead):
+            gt_bboxes_3d = [LiDARInstance3DBoxes(box, box_dim=box.shape[-1]) for box in gt_bboxes_3d]
+            losses = self.bbox_head_3d.loss([bev_feat], gt_bboxes_3d, gt_labels_3d, gt_ids_3d=[np.arange(len(gt_labels_3d[i])) for i in range(len(gt_labels_3d))],
+                                            img_metas = img_metas)
+        elif isinstance(self.bbox_head_3d, CenterHead):
+            outs = self.bbox_head_3d([bev_feat])
             gt_bboxes_3d = [LiDARInstance3DBoxes(box, box_dim=box.shape[-1]) for box in gt_bboxes_3d]
             loss_inputs = [gt_bboxes_3d, gt_labels_3d, outs, img_metas]
             losses = self.bbox_head_3d.loss(*loss_inputs)
+        else:
+            outs = self.bbox_head_3d([bev_feat])
+            losses = self.bbox_head_3d.loss(*outs, gt_bboxes_3d, gt_labels_3d,
+                                            img_metas)
+            
         if self.with_depth_head_2d:
             fv_feat = feats[-1]
             depth_volumes, _, depth_preds = self.depth_head_2d(
@@ -384,23 +393,33 @@ class MultiViewDfMFisheye(DfM):
         # bbox_head takes a list of feature from different levels as input
         # so need [bev_feat]
         bev_feat = feats[0]
-        outs = self.bbox_head_3d([bev_feat])
+        
         """
         if self.with_depth_head:
             stereo_feat = feats[1]
             depth_volumes, _, depth_preds = self.depth_head(stereo_feat)
         """
         
-        if not isinstance(self.bbox_head_3d, CenterHead):
-            bbox_list = self.bbox_head_3d.get_bboxes(*outs, img_metas)
-        else:
+        if isinstance(self.bbox_head_3d, CenterHead):
+            outs = self.bbox_head_3d([bev_feat])
             bbox_list = self.bbox_head_3d.get_bboxes(
                 outs, img_metas, rescale=False)
+        elif isinstance(self.bbox_head_3d, TransFusionHead):
+            bbox_list = self.bbox_head_3d.predict([bev_feat], None, img_metas)[0]
+        else:
+            outs = self.bbox_head_3d([bev_feat])
+            bbox_list = self.bbox_head_3d.get_bboxes(*outs, img_metas)
 
-        bbox_results = [
-            bbox3d2result(det_bboxes, det_scores, det_labels)
-            for det_bboxes, det_scores, det_labels in bbox_list
-        ]
+        if isinstance(self.bbox_head_3d, TransFusionHead):
+            bbox_results = [
+                bbox3d2result(det_bboxes, det_scores, det_labels)
+                for det_bboxes, det_scores, det_labels, _, _ in bbox_list
+            ]
+        else:
+            bbox_results = [
+                bbox3d2result(det_bboxes, det_scores, det_labels)
+                for det_bboxes, det_scores, det_labels in bbox_list
+            ]
  
         return bbox_results
 

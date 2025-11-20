@@ -9,6 +9,7 @@ import torch.distributed as dist
 from mmcv.runner import BaseModule, auto_fp16
 
 from core.visualization import imshow_det_bboxes
+import torch.nn.init as init
 
 
 class BaseDetector(BaseModule, metaclass=ABCMeta):

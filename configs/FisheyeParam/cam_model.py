@@ -219,7 +219,7 @@ class CamModel:
         
     def _cam2image_hycan(self, points3D, filter_points):
         points3D = np.dot(self.r1, points3D)
-        
+
         if filter_points:
             valid = points3D[2] > 0
             points3D = points3D[:, valid]
@@ -341,9 +341,9 @@ class CamModel:
         points3D = np.dot(self.r1, np.vstack((x, y, z)))
 
         # 只考虑向下的点
-        # if filter_points:
-        #     valid = points3D[2] < 0
-        #     points3D = points3D[:, valid]
+        if filter_points:
+            valid = points3D[2] < 0
+            points3D = points3D[:, valid]
 
         norm = np.linalg.norm(points3D[:2], axis=0)
         theta = np.arctan2(points3D[2], norm)

@@ -11,7 +11,7 @@ gpu_id : 1
 seed : 2025
 
 epoches : 30
-batch_size : 16
+batch_size : 32
 vehicle :  Hycan
 
 # backbone setup
@@ -20,7 +20,7 @@ freeze_backbone : False
 
 optimizer : 
     type : 'AdamW'
-    lr : 0.005
+    lr : 0.0002
     weight_decay : 0.0001
     paramwise_cfg : 
         custom_keys : 

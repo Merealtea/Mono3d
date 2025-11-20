@@ -8,7 +8,7 @@ from mmcv.runner.hooks import HOOKS, Hook
 from torch import distributed as dist
 
 
-@HOOKS.register_module()
+@HOOKS.register_module(force=True)
 class SyncRandomSizeHook(Hook):
     """Change and synchronize the random image size across ranks.
     SyncRandomSizeHook is deprecated, please use Resize pipeline to achieve

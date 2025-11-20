@@ -18,6 +18,7 @@ MIDDLE_ENCODERS = MODELS
 FUSION_LAYERS = MODELS
 SEGMENTORS = MODELS
 VTRANSFORMS = Registry("vtransforms")
+TRANSFORMER = Registry('Transformer')
 
 def build_backbone(cfg):
     """Build backbone."""

@@ -100,11 +100,12 @@ class BaseTransform(nn.Module):
         post_trans,
         **kwargs,
     ):
+        
         B, N, _ = camera2lidar_trans.shape
 
         # undo post-transformation
         # B x N x D x H x W x 3
-        points = self.frustum - post_trans.view(B, N, 1, 1, 1, 3)
+        points = self.frustum / kwargs['scale'] - post_trans.view(B, N, 1, 1, 1, 3)
         points = (
             torch.inverse(post_rots)
             .view(B, N, 1, 1, 1, 3, 3)
@@ -140,7 +141,7 @@ class BaseTransform(nn.Module):
     def bev_pool(self, geom_feats, x):
         B, N, D, H, W, C = x.shape
         Nprime = B * N * D * H * W
-    
+
         # flatten x
         x = x.reshape(Nprime, C)
 
@@ -165,6 +166,7 @@ class BaseTransform(nn.Module):
             & (geom_feats[:, 2] >= 0)
             & (geom_feats[:, 2] < self.nx[2])
         )
+ 
         x = x[kept]
 
         # ones = torch.ones_like(x)
@@ -199,6 +201,67 @@ class BaseTransform(nn.Module):
         # cv2.imwrite('final_image.png', final_image)
         # import pdb; pdb.set_trace()
         return final
+    
+    @force_fp32()
+    def forward(
+        self,
+        img,
+        points,
+        radar, 
+        camera2ego,
+        lidar2ego,
+        lidar2camera,
+        lidar2image,
+        camera_intrinsics,
+        camera2lidar,
+        img_aug_matrix,
+        lidar_aug_matrix,
+        **kwargs,
+    ):
+        rots = camera2ego[..., :3, :3]
+        trans = camera2ego[..., :3, 3]
+        intrins = camera_intrinsics[..., :3, :3]
+        post_rots = img_aug_matrix[..., :3, :3]
+        post_trans = img_aug_matrix[..., :3, 3]
+        lidar2ego_rots = lidar2ego[..., :3, :3]
+        lidar2ego_trans = lidar2ego[..., :3, 3]
+        camera2lidar_rots = camera2lidar[..., :3, :3]
+        camera2lidar_trans = camera2lidar[..., :3, 3]
+
+        extra_rots = lidar_aug_matrix[..., :3, :3]
+        extra_trans = lidar_aug_matrix[..., :3, 3]
+
+        
+        geom = self.get_geometry(
+            camera2lidar_rots,
+            camera2lidar_trans,
+            intrins,
+            post_rots,
+            post_trans,
+            extra_rots=extra_rots,
+            extra_trans=extra_trans,
+            scale = kwargs['scale'],
+        )
+        mats_dict = {
+            'intrin_mats': camera_intrinsics, 
+            'ida_mats': img_aug_matrix, 
+            'bda_mat': lidar_aug_matrix,
+            'sensor2ego_mats': camera2ego, 
+        }
+
+        x = self.get_cam_feats(img, mats_dict)
+
+        use_depth = False
+        if type(x) == tuple:
+            x, depth = x 
+            use_depth = True
+        
+        x = self.bev_pool(geom, x)
+
+        if use_depth:
+            return x, depth 
+        else:
+            return x
     
 class FisheyeTransform(BaseTransform):
     def __init__(

@@ -3,7 +3,7 @@ from mmcv.parallel import is_module_wrapper
 from mmcv.runner.hooks import HOOKS, Hook
 
 
-@HOOKS.register_module()
+@HOOKS.register_module(force=True)
 class YOLOXModeSwitchHook(Hook):
     """Switch the mode of YOLOX during training.
 

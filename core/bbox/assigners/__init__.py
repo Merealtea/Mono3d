@@ -13,10 +13,12 @@ from .region_assigner import RegionAssigner
 from .sim_ota_assigner import SimOTAAssigner
 from .task_aligned_assigner import TaskAlignedAssigner
 from .uniform_assigner import UniformAssigner
+from .hungarian_assigner_3d import HungarianAssigner3D
+from .transfusion_hungarian_assigner_3d import TransFusionHungarianAssigner3D
 
 __all__ = [
     'BaseAssigner', 'MaxIoUAssigner', 'ApproxMaxIoUAssigner', 'AssignResult',
     'PointAssigner', 'ATSSAssigner', 'CenterRegionAssigner', 'GridAssigner',
     'HungarianAssigner', 'RegionAssigner', 'UniformAssigner', 'SimOTAAssigner',
-    'TaskAlignedAssigner', 'MaskHungarianAssigner'
+    'TaskAlignedAssigner', 'MaskHungarianAssigner', 'HungarianAssigner3D', 'TransFusionHungarianAssigner3D'
 ]

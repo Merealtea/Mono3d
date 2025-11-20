@@ -7,7 +7,7 @@ image_prefix : images
 
 bbox_coordination : "Lidar"
 
-gpu_id : 0
+gpu_id : 1
 seed : 2025
 
 epoches : 30

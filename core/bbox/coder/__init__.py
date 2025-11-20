@@ -11,10 +11,11 @@ from .delta_xyzwhlr_bbox_coder import DeltaXYZWLHRBBoxCoder
 from .fcos3d_bbox_coder import FCOS3DBBoxCoder
 from .pgd_bbox_coder import PGDBBoxCoder
 from .centerpoint_bbox_coders import CenterPointBBoxCoder
+from .transfusion_bbox_coder import TransFusionBBoxCoder
 
 __all__ = [
     'BaseBBoxCoder', 'PseudoBBoxCoder', 'DeltaXYWHBBoxCoder',
     'LegacyDeltaXYWHBBoxCoder', 'TBLRBBoxCoder', 'YOLOBBoxCoder',
     'BucketingBBoxCoder', 'DistancePointBBoxCoder', 'DeltaXYZWLHRBBoxCoder',
-    'FCOS3DBBoxCoder', 'PGDBBoxCoder', 'CenterPointBBoxCoder'
+    'FCOS3DBBoxCoder', 'PGDBBoxCoder', 'CenterPointBBoxCoder', 'TransFusionBBoxCoder'
 ]

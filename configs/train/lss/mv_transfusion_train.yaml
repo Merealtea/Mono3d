@@ -1,0 +1,54 @@
+model_config : configs/models/mv_transfusion_hycan.yaml
+dataset_config : configs/datasets/unified-mv3d.yaml
+data_root : ./data/data_info
+save_path : ./ckpt/
+annotation_prefix : annotations
+image_prefix : images
+
+bbox_coordination : "Lidar"
+
+gpu_id : 1
+seed : 2025
+
+epoches : 30
+batch_size : 16
+vehicle :  Hycan
+
+# backbone setup
+save_backbone : False
+freeze_backbone : False
+
+optimizer : 
+    type : 'AdamW'
+    lr : 0.001
+    weight_decay : 0.01
+    paramwise_cfg : 
+        custom_keys : 
+          backbone : 
+            lr_mult : 0.1 
+            decay_mult : 1.0
+    grad_clip : 
+      max_norm : 35. 
+      norm_type : 2
+# although grad_clip is set in original code it is not used
+# optimizer_config : dict(grad_clip : dict(max_norm : 35. norm_type : 2))
+# learning policy
+lr_config : 
+  warmup : linear
+  warmup_iters : 500
+  warmup_ratio : 0.3333333333333333
+  policy : 'step'
+  step : [5, 22]
+
+eval_interval : 10
+save_interval : 10
+
+dist_params : 
+    backend : 'nccl'
+find_unused_parameters : True  # only 1 of 4 FPN outputs is used
+log_level : 'INFO'
+# load_from : '/mnt/lustre/wangtai/mmdet3d-DfM/work_dirs/2x16-D3-pgd-mv3d/epoch_24.pth'  # noqa
+# load_from : '/mnt/lustre/wangtai/mmdet3d-DfM/work_dirs/3x16-pgd-fixed-baseline/epoch_24.pth'  # noqa
+load_from : '/mnt/lustre/wangtai/mmdet3d-DfM/work_dirs/3x16-pgd-fixed-baseline-full-smallimg/epoch_24.pth'  # noqa
+resume_from : None
+workflow : [('train', 1)]

@@ -240,7 +240,6 @@ class DCNSeparateHead(BaseModule):
         cls_score = self.cls_head(center_feat)
         ret = self.task_head(reg_feat)
         ret["heatmap"] = cls_score
-
         return ret
 
 
@@ -414,7 +413,7 @@ class CenterHead(BaseModule):
         heatmaps, anno_boxes, inds, masks = multi_apply(
             self.get_targets_single, gt_bboxes_3d, gt_labels_3d
         )
-
+        
         heatmap_img = heatmaps[0]
         heatmap_img = heatmap_img[0].detach().cpu().numpy()[0]
 
@@ -496,7 +495,7 @@ class CenterHead(BaseModule):
                 (len(self.class_names[idx]), feature_map_size[1], feature_map_size[0])
             )
             # We remove the speed here
-            anno_box = gt_bboxes_3d.new_zeros((max_objs, 8), dtype=torch.float32)
+            anno_box = gt_bboxes_3d.new_zeros((max_objs, 10), dtype=torch.float32)
 
             ind = gt_labels_3d.new_zeros((max_objs), dtype=torch.int64)
             mask = gt_bboxes_3d.new_zeros((max_objs), dtype=torch.uint8)
@@ -563,12 +562,13 @@ class CenterHead(BaseModule):
 
                     mask[new_idx] = 1
                     # TODO: support other outdoor dataset
-                    # vx, vy = task_boxes[idx][k][7:]
+
+                    vx, vy = task_boxes[idx][k][7:]
                     rot = task_boxes[idx][k][6]
                     box_dim = task_boxes[idx][k][3:6]
                     if self.norm_bbox:
                         box_dim = box_dim.log()
-                    
+
                     anno_box[new_idx] = torch.cat(
                         [
                             center - torch.tensor([x, y], device=device),
@@ -576,8 +576,8 @@ class CenterHead(BaseModule):
                             box_dim,
                             torch.sin(rot).unsqueeze(0),
                             torch.cos(rot).unsqueeze(0),
-                            # vx.unsqueeze(0),
-                            # vy.unsqueeze(0),
+                            vx.unsqueeze(0),
+                            vy.unsqueeze(0),
                         ]
                     )
 
@@ -585,6 +585,7 @@ class CenterHead(BaseModule):
             anno_boxes.append(anno_box)
             masks.append(mask)
             inds.append(ind)
+        
         return heatmaps, anno_boxes, inds, masks
 
     @force_fp32(apply_to=("preds_dicts"))
@@ -626,7 +627,7 @@ class CenterHead(BaseModule):
                     preds_dict[0]["height"],
                     preds_dict[0]["dim"],
                     preds_dict[0]["rot"],
-                    # preds_dict[0]["vel"],
+                    preds_dict[0]["vel"],
                 ),
                 dim=1,
             )
@@ -643,6 +644,7 @@ class CenterHead(BaseModule):
 
             code_weights = self.train_cfg.get("code_weights", None)
             bbox_weights = mask * mask.new_tensor(code_weights)
+            
             loss_bbox = self.loss_bbox(
                 pred, target_box, bbox_weights, avg_factor=(num + 1e-4)
             )
@@ -839,10 +841,12 @@ class CenterHead(BaseModule):
                 if self.test_cfg["score_threshold"] > 0.0:
                     box_preds = box_preds[top_scores_keep]
                     top_labels = top_labels[top_scores_keep]
-
-                bev_box = metas[i]["box_type_3d"](
-                    box_preds[:, :], self.bbox_coder.code_size
-                ).bev
+                try:
+                    bev_box = metas[i]["box_type_3d"](
+                        box_preds[:, :], self.bbox_coder.code_size
+                    ).bev
+                except:
+                    import pdb; pdb.set_trace()
                 for cls, scale in enumerate(nms_scale):
                     cur_bev_box = bev_box[top_labels == cls]
                     cur_bev_box[:, [2, 3]] *= scale

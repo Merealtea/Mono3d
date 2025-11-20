@@ -277,9 +277,7 @@ def devRotateIoUEval(rbox1, rbox2, criterion=-1):
         return area_inter
 
 
-@cuda.jit(
-    '(int64, int64, float32[:], float32[:], float32[:], int32)',
-    fastmath=False)
+@cuda.jit(fastmath=False)
 def rotate_iou_kernel_eval(N,
                            K,
                            dev_boxes,
@@ -361,6 +359,7 @@ def rotate_iou_gpu_eval(boxes, query_boxes, criterion=-1, device_id=0):
     N = boxes.shape[0]
     K = query_boxes.shape[0]
     iou = np.zeros((N, K), dtype=np.float32)
+
     if N == 0 or K == 0:
         return iou
     threadsPerBlock = 8 * 8

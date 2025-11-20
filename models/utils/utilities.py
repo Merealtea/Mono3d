@@ -1,0 +1,477 @@
+import numpy as np
+import torch
+import cv2
+import random
+from copy import deepcopy
+import os
+from scipy.spatial.transform import Rotation as R
+
+obj_colors = {
+    'vehicle': (255, 0, 0),  # Blue
+    'pedestrian': (0, 255, 0),  # Green
+    'cyclist': (0, 0, 255),  # Red
+}
+
+shift = np.array([0, 0, 0])
+
+from shapely.geometry import Polygon
+
+def boxes_to_polygon(boxes_2d):
+    """
+    将旋转矩形框 (x, y, l, w, yaw) 转换为 4 个顶点组成的多边形对象列表
+    boxes_2d: Tensor of shape (N, 5)
+    """
+    device = boxes_2d.device
+    boxes_2d = boxes_2d.cpu().detach().numpy()
+    polygons = []
+
+    for box in boxes_2d:
+        x, y, l, w, yaw = box
+        l, w = l / 2, w / 2
+
+        corner_points = np.array([
+            [x - l, y - w],
+            [x + l, y - w],
+            [x + l, y + w],
+            [x - l, y + w]
+        ])
+
+        # 旋转
+        R = np.array([
+            [np.cos(yaw), -np.sin(yaw)],
+            [np.sin(yaw), np.cos(yaw)]
+        ])
+        rotated = np.dot(corner_points - [x, y], R.T) + [x, y]
+
+        polygon = Polygon(rotated)
+        polygons.append(polygon)
+
+    return polygons
+
+def compute_iou_rotated_boxes(src_boxes, dst_boxes):
+    """
+    计算 N 个旋转矩形框之间的 IOU，仅考虑 XY 平面投影
+    src_boxes: Tensor of shape (N, 7)
+    dst_boxes: Tensor of shape (N, 7)
+    """
+    assert src_boxes.shape == dst_boxes.shape, "src and dst must have the same shape"
+
+    # 只保留 x, y, l, w, yaw
+    src_2d = src_boxes[:, [0, 1, 3, 4, 6]]  # (x, y, l, w, yaw)
+    dst_2d = dst_boxes[:, [0, 1, 3, 4, 6]]
+
+    # 转为多边形
+    src_polygons = boxes_to_polygon(src_2d)
+    dst_polygons = boxes_to_polygon(dst_2d)
+
+    ious = []
+
+    for s, d in zip(src_polygons, dst_polygons):
+        if not s.is_valid or not d.is_valid:
+            ious.append(0.0)
+            continue
+        intersection = s.intersection(d).area
+        union = s.union(d).area
+        if union == 0:
+            ious.append(0.0)
+        else:
+            ious.append(intersection / union)
+
+    return torch.tensor(ious, device=src_boxes.device, dtype=torch.float32)
+
+def to_device(data, device):
+    if isinstance(data, torch.Tensor):
+        return data.to(device)
+    if isinstance(data, dict):
+        for key in data:
+            data[key] = to_device(data[key], device)
+        return data
+    if isinstance(data, list):
+        return [to_device(d, device) for d in data]
+    return data
+
+def init_random_seed(seed=None):
+    if seed is None:
+        seed = np.random.randint(2**32 - 1)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    return seed
+
+def extract_rotation_matrix(affine_matrix):
+    """Extract and normalize the rotation matrix from a 4x4 affine matrix."""
+    # Extract the 3x3 rotation and scale matrix
+    rot_scale_matrix = affine_matrix[:3, :3]
+    
+    # Normalize each column to get the rotation matrix
+    rotation_matrix = rot_scale_matrix / np.linalg.norm(rot_scale_matrix, axis=0)
+    
+    return rotation_matrix
+
+def calculate_corners(bbox):
+    # Extracting components of the bounding box
+    bbox_copy = deepcopy(bbox)
+    xyz, length, width, height, yaw =\
+         deepcopy(bbox_copy[:, 0:3]), bbox_copy[:, 3], bbox_copy[:, 4], bbox_copy[:, 5], bbox_copy[:, 6]
+
+    # Define half dimensions for convenience
+    half_length = length / 2
+    half_width = width / 2
+    half_height = height / 2
+
+    # Define the corners of the bounding box in local coordinate system
+    corners_local = np.stack([
+        np.stack([-half_length, -half_width, -half_height], axis=0),
+        np.stack([-half_length, -half_width, half_height], axis=0),
+        np.stack([-half_length, half_width, half_height], axis=0),
+        np.stack([-half_length, half_width, -half_height], axis=0),
+        np.stack([half_length, -half_width, -half_height], axis=0),
+        np.stack([half_length, -half_width, half_height], axis=0),
+        np.stack([half_length, half_width, half_height], axis=0),
+        np.stack([half_length, half_width, -half_height], axis=0)
+    ], axis=0).transpose((2, 1, 0))
+
+    # Rotation matrix around the z-axis (yaw)
+    rotation_matrix = np.stack([
+        np.stack([np.cos(yaw),  -np.sin(yaw), np.zeros_like(yaw)],axis=0),
+        np.stack([np.sin(yaw), np.cos(yaw), np.zeros_like(yaw)], axis=0),
+        np.stack([np.zeros_like(yaw), np.zeros_like(yaw), np.ones_like(yaw)], axis=0),
+    ], axis=0).transpose((2, 0, 1))
+
+    # Apply rotation to each corner
+    rotated_corners = np.einsum("nik,nkj->nij", rotation_matrix, corners_local)
+
+    # Translate to the bounding box center
+    if len(xyz):
+        translated_corners = rotated_corners + xyz.reshape(-1, 3, 1) + shift.reshape(-1, 3, 1)
+    else:
+        translated_corners = rotated_corners + xyz.reshape(-1, 3, 1)
+    return translated_corners.transpose(0, 2, 1)
+
+def turn_boxes_to_kitti(boxes, metric ="bbox"):
+    """
+        metric includes: bbox, bev, 3d
+    """
+    annos = {}
+    num_boxes = len(boxes)
+    if metric == "bbox":
+        boxes[:, 3:6] = boxes[:, 3:6] * 2
+        boxes[:, :2] = boxes[:, :2] - boxes[:, 3:5] / 2
+        return boxes
+    elif metric == "bev":
+        boxes[:, 3:5] = boxes[:, 3:5] * 2
+        boxes[:, :2] = boxes[:, :2] - boxes[:, 3:5] / 2
+        return boxes
+    elif metric == "3d":
+        annos['type'] = 'Pedestrian'
+        annos['truncated'] = [0.0] * num_boxes
+        annos['occluded'] = [0] * num_boxes
+        annos['alpha'] = [0] * num_boxes
+        annos['bbox'] = boxes[:, -4:]
+        annos['dimensions'] = boxes[:, 3:6]
+        annos['location'] = boxes[:, :3]
+        annos['rotation_y'] = boxes[:, 6]
+        return annos
+    else:
+        raise ValueError(f"metric {metric} is not supported")
+
+
+def plot_lidar_on_img(img,
+                      points,
+                      K, 
+                      Rt,
+                    color=(0, 255, 0),
+                    radius=1,
+                    thickness=1):
+    """Plot the LiDAR points on 2D images.
+    Args:
+        img (numpy.array): The numpy array of image.
+        points (numpy.array): The LiDAR points in the shape of [N, 3]
+            or [N, 4] (with intensity).
+        K (numpy.array): The camera intrinsic matrix in the shape of [3, 3].
+        Rt (numpy.array): The camera extrinsic matrix in the shape of [4, 4].
+        color (tuple[int], optional): The color to draw points.
+            Default: (0, 255, 0).
+        radius (int, optional): The radius of the points. Default: 1.
+        thickness (int, optional): The thickness of the points. Default: 1.
+    """
+    img = deepcopy(img)
+    if points.shape[1] == 3:
+        points = np.hstack((points, np.ones((points.shape[0], 1))))
+    elif points.shape[1] != 4:
+        raise ValueError("The shape of points should be [N, 3] or [N, 4].")
+    # Transform points to camera coordinate system
+    points_cam = np.dot(Rt[:3, :3], points[:, :3].
+                        T).T + Rt[:3, 3]
+    # Project points to image plane
+    points_homogeneous = np.dot(K, points_cam.T).T
+    # filter points that are behind the camera
+    points_homogeneous = points_homogeneous[points_homogeneous[:, 2] > 0.1]
+
+    points_uv = points_homogeneous[:, :2] / points_homogeneous[:, 2:]
+    points_uv = points_uv.astype(np.int32)
+    # filter points that are out of image bounds
+    img_h, img_w = img.shape[:2]
+    valid_mask = (points_uv[:, 0] >= 0) & (points_uv[:, 0] < img_w) & \
+                 (points_uv[:, 1] >= 0) & (points_uv[:, 1] < img_h)
+    points_uv = points_uv[valid_mask]
+    if len(points_uv) == 0:
+        return img.astype(np.uint8)
+    # Draw points on the image
+    for point in points_uv:
+        cv2.circle(img, (point[0], point[1]), radius, color, thickness, cv2.LINE_AA)
+    return img.astype(np.uint8)
+
+
+def plot_rect3d_on_img(img,
+                       num_rects,
+                       rect_corners,
+                       color=(0, 255, 0),
+                       thickness=1,
+                       scores = None,
+                       vars = None):
+    """Plot the boundary lines of 3D rectangular on 2D images.
+
+    Args:
+        img (numpy.array): The numpy array of image.
+        num_rects (int): Number of 3D rectangulars.
+        rect_corners (numpy.array): Coordinates of the corners of 3D
+            rectangulars. Should be in the shape of [num_rect, 8, 2].
+        color (tuple[int], optional): The color to draw bboxes.
+            Default: (0, 255, 0).
+        thickness (int, optional): The thickness of bboxes. Default: 1.
+    """
+    line_indices = ((0, 1), (0, 3), (0, 4), (1, 2), (1, 5), (3, 2), (3, 7),
+                    (4, 5), (4, 7), (2, 6), (5, 6), (6, 7))
+
+    if scores is not None and len(scores) != num_rects:
+        raise ValueError("The length of scores should be the same as the number of rectangles.")
+    
+    if vars is not None and len(vars) != num_rects:
+        raise ValueError("The length of vars should be the same as the number of rectangles.")
+    
+    for i in range(num_rects):
+        corners = rect_corners[i].astype(np.int32)
+        for start, end in line_indices:
+            try:
+                cv2.line(img, (corners[start, 0], corners[start, 1]),
+                        (corners[end, 0], corners[end, 1]), color, thickness,
+                        cv2.LINE_AA)
+                
+                if scores is not None:
+                    cv2.putText(img, "{:.2f}".format(scores[i]), (corners[0, 0], corners[0, 1]), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+
+                if vars is not None:
+                    cv2.putText(img, "{:.2f}_{:.2f}".format(vars[i][0], vars[i][1]), (corners[0, 0], corners[0, 1] + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+            except:
+                import pdb; pdb.set_trace()
+
+    return img.astype(np.uint8)
+
+def detection_visualization_pinhole(image_path, K, Rt, pred_boxes=None, pred_labels=None, gt_boxes=None, gt_labels=None):
+    """
+    将3D检测框（预测和真值）绘制到图像上。
+    
+    参数:
+        image_path (str): 原始图像路径
+        K (np.ndarray): 3x3 相机内参矩阵
+        Rt (np.ndarray): 3x4 外参矩阵 [R | t]
+        pred_boxes (np.ndarray or None): 预测框，shape (N, 9)
+        gt_boxes (np.ndarray or None): 真值框，shape (M, 9)
+
+    返回:
+        np.ndarray: 绘制好的图像
+    """
+    # 加载图像
+    assert os.path.exists(image_path), f"Image not found: {image_path}"
+    image = cv2.imread(image_path)
+    img_h, img_w = image.shape[:2]
+
+    def project_to_image(boxes, color, thickness=2):
+        for box in boxes:
+            x, y, z, l, w, h, yaw = box[:7]
+            center = np.array([x, y, z])
+            # 8个顶点在BEV下的坐标（相对于中心点）
+            corners_3d = np.array([
+                [l/2, w/2, h/2], [-l/2, w/2, h/2],
+                [-l/2, -w/2, h/2], [l/2, -w/2, h/2],
+                [l/2, w/2, -h/2], [-l/2, w/2, -h/2],
+                [-l/2, -w/2, -h/2], [l/2, -w/2, -h/2]
+            ]).T  # shape (3, 8)
+
+            
+            rm = R.from_euler('ZYX', [yaw, 0, 0]).as_matrix()
+
+            corners_3d = rm @ corners_3d + center[:, None]
+
+
+            # 转换为齐次坐标
+            ones = np.ones((1, 8))
+            corners_3d_homogeneous = np.vstack((corners_3d, ones))  # (4, 8)
+
+            # 应用外参变换（世界 -> 相机坐标）
+            corners_camera = Rt @ corners_3d_homogeneous
+     
+            if np.all(corners_camera[2] < 0):
+                # 如果有点在相机后面，跳过这个框
+                continue
+
+            # 投影到图像平面
+            uv_homogeneous = K[:3, :3] @ corners_camera[:3]  # (3, 8)
+            uv = (uv_homogeneous[:2] / uv_homogeneous[2]).astype(int)
+
+            # 判断是否在图像范围内
+            valid = np.all((uv[0] >= 0) & (uv[0] < img_w) &
+                           (uv[1] >= 0) & (uv[1] < img_h), axis=0)
+            if not np.any(valid):
+                continue  # 整个框都不在图像中，跳过
+
+            # 绘制立方体边线
+            lines = [
+                (0, 1), (1, 2), (2, 3), (3, 0),
+                (4, 5), (5, 6), (6, 7), (7, 4),
+                (0, 4), (1, 5), (2, 6), (3, 7)
+            ]
+            for start, end in lines:
+                pt1 = tuple(uv[:, start])
+                pt2 = tuple(uv[:, end])
+                cv2.line(image, pt1, pt2, color, thickness)
+
+    # 绘制真值框（绿色）
+    if gt_boxes is not None and len(gt_boxes) > 0:
+        project_to_image(gt_boxes, color=(0, 255, 0))
+
+    # 绘制预测框（红色）
+    if pred_boxes is not None and len(pred_boxes) > 0:
+        project_to_image(pred_boxes, color=(0, 0, 255))
+
+    return image
+
+def detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_path, bboxes_coor = "CAM", scores = None, vars = None):
+    if bboxes_coor == "CAM":
+        bboxes = []
+        bbox[:, :3] = cam_model.cam2world(bbox[:, :3])
+        gt_bbox[:, :3] = cam_model.cam2world(gt_bbox[:, :3])
+        corners = calculate_corners(bbox).reshape(-1, 3)
+        gt_corners = calculate_corners(gt_bbox).reshape(-1, 3)          
+        corners = cam_model.world2cam(corners.T).T.reshape(-1, 8, 3)
+        gt_corners = cam_model.world2cam(gt_corners.T).T.reshape(-1, 8, 3)
+     
+        for corner in corners:
+            pixel_uv = cam_model.cam2image(corner.T).T
+            bboxes.append(pixel_uv)
+
+        gt_bboxes = []
+        for corner in gt_corners:
+            pixel_uv = cam_model.cam2image(corner.T).T
+            gt_bboxes.append(pixel_uv)
+
+        img = cv2.imread(filename)
+
+        img = plot_rect3d_on_img(img, len(gt_bboxes), gt_bboxes, color=(0, 255, 0))
+        img = plot_rect3d_on_img(img, len(bboxes), bboxes, color=(0, 0, 255), scores=scores, vars=vars)
+
+    elif bboxes_coor == "Lidar":
+        bboxes = []
+        depth = cam_model.world2cam(bbox[:, :3].T).T[:, 0]
+        gt_depth = cam_model.world2cam(gt_bbox[:, :3].T).T[:, 0]
+        bbox = bbox[depth > 0.05]
+        gt_bbox = gt_bbox[gt_depth > 0.05]
+
+        if scores is not None:
+            scores = scores[depth > 0.05]
+        if vars is not None:
+            vars = vars[depth > 0.05]
+
+        corners = calculate_corners(bbox).reshape(-1, 3)
+        gt_corners = calculate_corners(gt_bbox).reshape(-1, 3)
+        corners = cam_model.world2cam(corners.T)
+        gt_corners = cam_model.world2cam(gt_corners.T)
+        corners[0][corners[0] < 0.05] = 0.05
+        gt_corners[0][gt_corners[0] < 0.05] = 0.05
+
+        corners = corners.T.reshape(-1, 8, 3)
+        gt_corners = gt_corners.T.reshape(-1, 8, 3)
+
+        for corner in corners:
+            pixel_uv = cam_model.cam2image(corner.T).T
+            if len(pixel_uv) < 8:
+                continue
+            bboxes.append(pixel_uv)
+        gt_bboxes = []
+        for corner in gt_corners:
+            pixel_uv = cam_model.cam2image(corner.T).T
+            if len(pixel_uv) < 8:
+                continue
+            gt_bboxes.append(pixel_uv)
+        img = cv2.imread(filename)
+
+        img = plot_rect3d_on_img(img, len(gt_bboxes), gt_bboxes, color=(0, 255, 0))
+        img = plot_rect3d_on_img(img, len(bboxes), bboxes, color=(0, 0, 255), scores=scores, vars=vars)
+  
+    return img
+
+def turn_gt_to_annos(gts, class_names):
+    assert isinstance(gts, list), "gt must be a list"
+    if len(gts) == 0:
+        return []
+
+    assert isinstance(gts[0], dict), "gt must be a list of dict"
+
+    gt_annos = []
+    for image_idx, gt in enumerate(gts):
+        annos = []
+        gt_labels = gt['gt_labels'][0].cpu()
+        if 'gt_bboxes' in gt:
+            bboxes = gt['gt_bboxes'][0].cpu()
+        else:
+            bboxes = torch.zeros([len(gt_labels), 4])
+        dimensions = gt['gt_bboxes_3d'][0][:, 3:6].cpu()
+        location = gt['gt_bboxes_3d'][0][:, :3].cpu()
+        rotation_y = gt['gt_bboxes_3d'][0][:, 6].cpu()
+        timestamp = gt['img_metas'][0]['timestamp']
+        direction = gt['img_metas'][0]['direction']
+        if len(gt_labels) == 0:
+            annos.append({
+                    'name': np.array([]),
+                    'truncated': np.array([]),
+                    'occluded': np.array([]),
+                    'alpha': np.array([]),
+                    'bbox': np.zeros([0, 4]),
+                    'dimensions': np.zeros([0, 3]),
+                    'location': np.zeros([0, 3]),
+                    'rotation_y': np.array([]),
+                    'score': np.array([]),
+                })
+        else:
+            anno = {
+                    'name': [],
+                    'truncated': [],
+                    'occluded': [],
+                    'alpha': [],
+                    'bbox': [],
+                    'dimensions': [],
+                    'location': [],
+                    'rotation_y': [],
+                    'score': []
+                }
+            for det_idx in range(len(gt_labels)):
+                anno['name'].append(class_names[int(gt_labels[det_idx])])
+                anno['truncated'].append(0.0)
+                anno['occluded'].append(0)
+                anno['alpha'].append(0)
+                anno['bbox'].append(bboxes[det_idx])
+                anno['dimensions'].append(dimensions[det_idx])
+                anno['location'].append(location[det_idx])
+                anno['rotation_y'].append(rotation_y[det_idx])
+                anno['score'].append(np.array([1.0]))
+            anno = {k: np.stack(v) for k, v in anno.items()}
+            annos.append(anno)
+
+        annos[-1]['sample_idx'] = np.array(
+                [image_idx] * len(annos[-1]['score']), dtype=np.int64)
+        annos[-1]['timestamp'] = np.array(timestamp)
+        annos[-1]['direction'] = np.array(direction)
+        gt_annos += annos
+    return gt_annos

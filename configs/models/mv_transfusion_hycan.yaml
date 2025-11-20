@@ -1,0 +1,220 @@
+type : 'MultiViewBEVFusionUnified'
+num_views : 4
+num_ref_frames : 0
+voxel_size : [0.25, 0.25, 0.25]  # n_voxels : [240, 300, 12]
+temporal_aggregate : 'concat'
+backbone : 
+    type : 'ResNet'
+    depth : 34
+    num_stages : 3
+    out_indices : [0, 1, 2]
+    frozen_stages : 1
+    norm_eval : True
+    init_cfg : 
+      type : 'Pretrained' 
+      checkpoint : 'torchvision://resnet34'
+neck : 
+    type : 'FPN'
+    in_channels : [64, 128, 256]
+    out_channels : &hidden_channel 32
+    num_outs : 4
+
+# neck_3d :
+#   type : 'OutdoorImVoxelNeck'
+#   in_channels : 64
+#   out_channels : 256
+
+valid_sample : True
+temporal_aggregate : 'concat'
+voxel_size : &voxel_size [0.25, 0.25, 0.25]  # n_voxels : [240, 300, 12]
+anchor_generator : 
+    type : 'AlignedAnchor3DRangeGenerator'
+    ranges : &range [[-10.0, -10.0, 0, 10.0, 10.0, 3]]
+    rotations : [.0]
+
+point_cloud_range : &point_cloud_range [-10.0, -10.0, -3, 10.0, 10.0, 3]
+post_center_range : &post_center_range [-11.0, -11.0, -3, 11.0, 11.0, 3]
+
+neck_3d : 
+    type : 'DfMNeckConv'
+    in_channels : *hidden_channel
+    out_channels : *hidden_channel
+    num_frames : 1  # num_frames = num_ref_frames+1
+
+embed_dims : &embed_dims 32
+feedforward_channels : &feedforward_channels 64
+
+bev_h_ : &bev_h_ 80
+bev_w_ : &bev_w_ 80
+
+with_delay : &with_delay False
+max_time_delay : 0.0
+
+# loss cfg for tracking
+bbox_head_3d:
+    type: TransFusionHead
+    num_proposals: 200
+    auxiliary: True
+    in_channels: *hidden_channel
+    hidden_channel: *embed_dims
+    num_classes: 1
+    nms_kernel_size: 3
+    bn_momentum: 0.1
+    num_decoder_layers: 1
+    with_delay: *with_delay
+    decoder_layer:
+        type: 'TransformerDecoderLayer'
+        self_attn_cfg: 
+          embed_dims: *embed_dims
+          num_heads: 2
+          dropout: 0.1
+        cross_attn_cfg: 
+          embed_dims: *embed_dims
+          num_heads: 4
+          dropout: 0.1
+        ffn_cfg: 
+            embed_dims: *embed_dims
+            feedforward_channels: *feedforward_channels
+            num_fcs: 2
+            ffn_drop: 0.1
+            act_cfg: 
+              type: 'ReLU' 
+              inplace: True
+        norm_cfg: 
+          type: 'LN'
+        pos_encoding_cfg: 
+          input_channel: 2 
+          num_pos_feats: *embed_dims 
+
+    common_heads:
+        center: [2, 2] 
+        height: [1, 2] 
+        dim: [3, 2]
+        rot: [2, 2] 
+        
+    bbox_coder:
+        type: 'TransFusionBBoxCoder'
+        pc_range: *point_cloud_range
+        post_center_range: *post_center_range
+        score_threshold: 0.1
+        out_size_factor: &out_size_factor 1
+        voxel_size: *voxel_size
+        code_size: 8
+    loss_heatmap: 
+        type: 'GaussianFocalLoss'
+        reduction: 'mean'
+        loss_weight: 1.0
+    loss_bbox : 
+      type : 'SmoothL1Loss' 
+      beta : 0.1111111111111111
+      loss_weight : 0.25
+    loss_cls: 
+        type: 'FocalLoss'
+        use_sigmoid: true
+        gamma: 2.0
+        alpha: 0.25
+        reduction: mean
+        loss_weight: 1.0
+
+# bbox_head_3d : 
+#     type : 'Anchor3DHead'
+#     num_classes : 1
+#     in_channels : 32
+#     feat_channels : 32
+#     use_direction_classifier : True
+#     anchor_generator : 
+#         type : 'AlignedAnchor3DRangeGenerator'
+#         ranges : *range
+#         sizes : [
+#             [0.5, 0.5, 1.74],  # pedestrian
+#         ]
+#         rotations : [0, 1.57]
+#         reshape_out : False
+#     diff_rad_by_sin : True
+#     dir_offset : -0.7854  # -pi / 4
+#     bbox_coder : 
+#       type : 'DeltaXYZWLHRBBoxCoder'
+#     loss_cls : 
+#         type : 'FocalLoss'
+#         use_sigmoid : True
+#         gamma : 2.0
+#         alpha : 0.25
+#         loss_weight : 1.0
+#     loss_bbox : 
+#       type : 'SmoothL1Loss' 
+#       beta : 0.1111111111111111
+#       loss_weight : 2.0
+#     loss_dir : 
+#         type : 'CrossEntropyLoss' 
+#         use_sigmoid : False 
+#         loss_weight : 0.2
+
+# train_cfg : 
+#     assigner : 
+#       -
+#         # for Pedestrian
+#             type : 'MaxIoUAssigner'
+#             iou_calculator : 
+#               type : 'BboxOverlapsNearest3D'
+#             pos_iou_thr : 0.5
+#             neg_iou_thr : 0.35
+#             min_pos_iou : 0.35
+#             ignore_iof_thr : -1
+#       # -
+#       #   # for Cyclist
+#       #       type : 'MaxIoUAssigner'
+#       #       iou_calculator : 
+#       #         type : 'BboxOverlapsNearest3D'
+#       #       pos_iou_thr : 0.5
+#       #       neg_iou_thr : 0.35
+#       #       min_pos_iou : 0.35
+#       #       ignore_iof_thr : -1
+#       # -
+#       #   # for Car
+#       #       type : 'MaxIoUAssigner'
+#       #       iou_calculator : 
+#       #         type : 'BboxOverlapsNearest3D'
+#       #       pos_iou_thr : 0.6
+#       #       neg_iou_thr : 0.45
+#       #       min_pos_iou : 0.45
+#       #       ignore_iof_thr : -1
+#     allowed_border : 0
+#     pos_weight : -1
+#     debug : False
+#     code_weight : [1.0, 1.0, 0.2, 1.0, 1.0, 0.5, 0.5]
+# test_cfg : 
+#     box_code_size : 7
+#     use_rotate_nms : True
+#     nms_across_levels : False
+#     nms_thr : 0.05
+#     score_thr : 0.2
+#     min_bbox_size : 0
+#     nms_pre : 500
+    # max_num : 100
+
+train_cfg: 
+    dataset: 'nuScenes'
+    point_cloud_range: *point_cloud_range
+    grid_size: [*bev_h_, *bev_w_]
+    voxel_size: *voxel_size
+    out_size_factor: *out_size_factor
+    gaussian_overlap: 0.25
+    min_radius: 2
+    pos_weight: -1
+    code_weights: [1.0, 1.0, 0.2, 1.0, 1.0, 0.5, 0.5, 0.5]
+    assigner:
+        type: 'TransFusionHungarianAssigner3D'
+
+        reg_cost:
+          type: 'BBoxBEVL1Cost' 
+          weight: 0.25
+        iou_cost: 
+          type: 'IoU3DCost' 
+          weight: 0.25
+test_cfg:
+    dataset: 'nuScenes'
+    grid_size: [*bev_h_, *bev_w_, 1]
+    out_size_factor: *out_size_factor
+    voxel_size: *voxel_size
+    pc_range: *point_cloud_range
+    nms_type:

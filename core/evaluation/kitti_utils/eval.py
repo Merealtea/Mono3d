@@ -286,11 +286,10 @@ def compute_statistics_jit(overlaps,
 def get_split_parts(num, num_part):
     same_part = num // num_part
     remain_num = num % num_part
-    if remain_num == 0:
-        return [same_part] * num_part
-    else:
-        return [same_part] * num_part + [remain_num]
 
+    split_num = np.array([same_part] * num_part)
+    split_num[:remain_num] += 1
+    return split_num.tolist()
 
 @numba.jit(nopython=True)
 def fused_compute_statistics(overlaps,
@@ -353,12 +352,14 @@ def calculate_iou_partly(gt_annos, dt_annos, metric, num_parts=50):
         num_parts (int): A parameter for fast calculate algorithm.
     """
     assert len(gt_annos) == len(dt_annos)
+
     total_dt_num = np.stack([len(a['name']) for a in dt_annos], 0)
     total_gt_num = np.stack([len(a['name']) for a in gt_annos], 0)
     num_examples = len(gt_annos)
     split_parts = get_split_parts(num_examples, num_parts)
     parted_overlaps = []
     example_idx = 0
+
     for num_part in split_parts:
         gt_annos_part = gt_annos[example_idx:example_idx + num_part]
         dt_annos_part = dt_annos[example_idx:example_idx + num_part]
@@ -473,10 +474,12 @@ def eval_class(gt_annos,
     Returns:
         dict[str, np.ndarray]: recall, precision and aos
     """
+ 
     assert len(gt_annos) == len(dt_annos)
     num_examples = len(gt_annos)
     if num_examples < num_parts:
         num_parts = num_examples
+
     split_parts = get_split_parts(num_examples, num_parts)
 
     rets = calculate_iou_partly(dt_annos, gt_annos, metric, num_parts)
@@ -485,6 +488,7 @@ def eval_class(gt_annos,
     num_minoverlap = len(min_overlaps)
     num_class = len(current_classes)
     num_difficulty = len(difficultys)
+
     precision = np.zeros(
         [num_class, num_difficulty, num_minoverlap, N_SAMPLE_PTS])
     recall = np.zeros(
@@ -605,6 +609,7 @@ def do_eval(gt_annos,
     mAP11_aos = None
     mAP40_bbox = None
     mAP40_aos = None
+
     if 'bbox' in eval_types:
         ret = eval_class(
             gt_annos,
@@ -729,7 +734,6 @@ def kitti_eval(gt_annos,
     # compute_aos = (pred_alpha and valid_alpha_gt)
     # if compute_aos:
     #     eval_types.append('aos')
-
     mAP11_bbox, mAP11_bev, mAP11_3d, mAP11_aos, mAP40_bbox, mAP40_bev, \
         mAP40_3d, mAP40_aos = do_eval(gt_annos, dt_annos,
                                       current_classes, min_overlaps,

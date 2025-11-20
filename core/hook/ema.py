@@ -100,7 +100,7 @@ class BaseEMAHook(Hook):
             ema_buffer.data.copy_(temp)
 
 
-@HOOKS.register_module()
+@HOOKS.register_module(force=True)
 class ExpMomentumEMAHook(BaseEMAHook):
     """EMAHook using exponential momentum strategy.
 
@@ -115,7 +115,7 @@ class ExpMomentumEMAHook(BaseEMAHook):
             1 + x) / total_iter) + self.momentum
 
 
-@HOOKS.register_module()
+@HOOKS.register_module(force=True)
 class LinearMomentumEMAHook(BaseEMAHook):
     """EMAHook using linear momentum strategy.
 

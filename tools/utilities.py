@@ -4,6 +4,7 @@ import cv2
 import random
 from copy import deepcopy
 import os
+from scipy.spatial.transform import Rotation as R
 
 shift = np.array([0, 0, 0])
 
@@ -148,6 +149,85 @@ def plot_rect3d_on_img(img,
 
     return img.astype(np.uint8)
 
+def detection_visualization_pinhole(image_path, K, Rt, pred_boxes=None, gt_boxes=None):
+    """
+    将3D检测框（预测和真值）绘制到图像上。
+    
+    参数:
+        image_path (str): 原始图像路径
+        K (np.ndarray): 3x3 相机内参矩阵
+        Rt (np.ndarray): 3x4 外参矩阵 [R | t]
+        pred_boxes (np.ndarray or None): 预测框，shape (N, 9)
+        gt_boxes (np.ndarray or None): 真值框，shape (M, 9)
+
+    返回:
+        np.ndarray: 绘制好的图像
+    """
+    # 加载图像
+    assert os.path.exists(image_path), f"Image not found: {image_path}"
+    image = cv2.imread(image_path)
+    img_h, img_w = image.shape[:2]
+
+    def project_to_image(boxes, color, thickness=2):
+        for box in boxes:
+            x, y, z, l, w, h, yaw = box[:7]
+            center = np.array([x, y, z])
+            # 8个顶点在BEV下的坐标（相对于中心点）
+            corners_3d = np.array([
+                [l/2, w/2, h/2], [-l/2, w/2, h/2],
+                [-l/2, -w/2, h/2], [l/2, -w/2, h/2],
+                [l/2, w/2, -h/2], [-l/2, w/2, -h/2],
+                [-l/2, -w/2, -h/2], [l/2, -w/2, -h/2]
+            ]).T  # shape (3, 8)
+
+            
+            rm = R.from_euler('ZYX', [yaw, 0, 0]).as_matrix()
+
+            corners_3d = rm @ corners_3d + center[:, None]
+
+
+            # 转换为齐次坐标
+            ones = np.ones((1, 8))
+            corners_3d_homogeneous = np.vstack((corners_3d, ones))  # (4, 8)
+
+            # 应用外参变换（世界 -> 相机坐标）
+            corners_camera = Rt @ corners_3d_homogeneous
+     
+            if np.all(corners_camera[2] < 0):
+                # 如果有点在相机后面，跳过这个框
+                continue
+
+            # 投影到图像平面
+
+            uv_homogeneous = K @ corners_camera  # (3, 8)
+            uv = (uv_homogeneous[:2] / uv_homogeneous[2]).astype(int)
+
+            # 判断是否在图像范围内
+            valid = np.all((uv[0] >= 0) & (uv[0] < img_w) &
+                           (uv[1] >= 0) & (uv[1] < img_h), axis=0)
+            if not np.any(valid):
+                continue  # 整个框都不在图像中，跳过
+
+            # 绘制立方体边线
+            lines = [
+                (0, 1), (1, 2), (2, 3), (3, 0),
+                (4, 5), (5, 6), (6, 7), (7, 4),
+                (0, 4), (1, 5), (2, 6), (3, 7)
+            ]
+            for start, end in lines:
+                pt1 = tuple(uv[:, start])
+                pt2 = tuple(uv[:, end])
+                cv2.line(image, pt1, pt2, color, thickness)
+
+    # 绘制真值框（绿色）
+    if gt_boxes is not None and len(gt_boxes) > 0:
+        project_to_image(gt_boxes, color=(0, 255, 0))
+
+    # 绘制预测框（红色）
+    if pred_boxes is not None and len(pred_boxes) > 0:
+        project_to_image(pred_boxes, color=(0, 0, 255))
+
+    return image
 
 def detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_path, bboxes_coor = "CAM", scores = None, vars = None):
     if bboxes_coor == "CAM":

@@ -4,7 +4,7 @@ from os import path
 abs_path = path.abspath(__file__)
 import sys
 sys.path.append(abs_path.split("tools")[0])
-from utilities import init_random_seed, detection_visualization, to_device
+from utilities import init_random_seed, detection_visualization, to_device, detection_visualization_pinhole
 # set random seeds
 import random
 import torch
@@ -23,7 +23,6 @@ from torch.nn.utils import clip_grad
 from builder.build_dataset import build_dataset
 from builder.build_model import build_detector
 from datetime import datetime
-import pickle
 from configs.FisheyeParam import CamModel
 
 import tensorboardX
@@ -106,58 +105,67 @@ def main():
                 if epoch > start_epoch:
                     start_epoch = epoch
                     ckpt_file = os.path.join(save_path, file)
+
+        tensorboard_path = os.path.join(save_path, 'tensorboard')
+        # create tensorboard writer
+        writer = tensorboardX.SummaryWriter(tensorboard_path)
     else:
         with open(args.config) as f:
             cfg = yaml.safe_load(f)
-            vehicle = cfg["vehicle"]
-
-        # Create save folder to save the ckpt
-        save_path = cfg['save_path']
-        save_path = os.path.join(save_path, datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
-        create_folder(save_path)
-
-        tensorboard_path = os.path.join(save_path, 'tensorboard')
-        create_folder(tensorboard_path)
-
-        config_save_path = os.path.join(save_path, 'config')
-        create_folder(config_save_path)
-
-        # save config file
-        with open(os.path.join(config_save_path, 'train_config.yaml'), 'w') as f:
-            yaml.safe_dump(cfg, f)
 
         # load dataset
         with open(cfg['dataset_config']) as f:
             dataset_cfg = yaml.safe_load(f)
 
-        # save dataset config
-        with open(os.path.join(config_save_path, 'dataset_config.yaml'), 'w') as f:
-            yaml.safe_dump(dataset_cfg, f)
-
         # load model
         with open(cfg['model_config']) as f:
             model_cfg = yaml.safe_load(f)
 
-        # save model config 
-        with open(os.path.join(config_save_path, 'model_config.yaml'), 'w') as f:
-            yaml.safe_dump(model_cfg, f)
+        # Create save folder to save the ckpt
+        debug = False
+        if not debug:
+            save_path = cfg['save_path']
+            save_path = os.path.join(save_path, datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
+            create_folder(save_path)
 
-    cam_models = dict(zip(["left", "right", "front", "back"], [CamModel(direction, vehicle) for direction in ["left", "right", "front", "back"]]))
-    # create tensorboard writer
-    writer = tensorboardX.SummaryWriter(tensorboard_path)
+            tensorboard_path = os.path.join(save_path, 'tensorboard')
+            create_folder(tensorboard_path)
 
+            config_save_path = os.path.join(save_path, 'config')
+            create_folder(config_save_path)
+
+            # save config file
+            with open(os.path.join(config_save_path, 'train_config.yaml'), 'w') as f:
+                yaml.safe_dump(cfg, f)
+
+            # save dataset config
+            with open(os.path.join(config_save_path, 'dataset_config.yaml'), 'w') as f:
+                yaml.safe_dump(dataset_cfg, f)
+
+            # save model config 
+            with open(os.path.join(config_save_path, 'model_config.yaml'), 'w') as f:
+                yaml.safe_dump(model_cfg, f)
+
+            # create tensorboard writer
+            writer = tensorboardX.SummaryWriter(tensorboard_path)
+    cam_models = {
+        "Rock" : dict(zip(["left", "right", "front", "back"], [CamModel(direction, "Rock") for direction in ["left", "right", "front", "back"]])),
+        "Hycan" : dict(zip(["left", "right", "front", "back"], [CamModel(direction, "Hycan") for direction in ["left", "right", "front", "back"]])), 
+    }
+    
+    
     dataset_cfg["data_root"] = cfg["data_root"]
     dataset_cfg["ann_prefix"] = cfg["annotation_prefix"]
     dataset_cfg["img_prefix"] = cfg["image_prefix"]   
     dataset_cfg['test_mode'] = False
-    dataset_cfg["vehicle"] = vehicle
+    # dataset_cfg["vehicle"] = vehicle
+
     dataset = build_dataset(dataset_cfg)
 
     dataset_cfg['test_mode'] = True
     val_dataset = build_dataset(dataset_cfg)
 
     val_loss = 1000
-    model_cfg["vehicle"] = cfg["vehicle"]
     model = build_detector(model_cfg)
     total_epochs = cfg['epoches']
     batch_size = cfg['batch_size']
@@ -223,11 +231,15 @@ def main():
             #     img = (img_data[j].detach().cpu().numpy().transpose(1, 2, 0) * 80).astype(np.uint8)
             #     cv2.imwrite(f"./debug_img/{cam_dir}_{j}_{i}.jpg", img)
             ############################################
-
             loss_res = model(**data)
-            loss = sum([loss_res[key][0] if isinstance(loss_res[key], list) else loss_res[key] for key in loss_res])
+            loss= 0
+            for key in loss_res:
+                if "loss" in key:
+                    if isinstance(loss_res[key], list):
+                        loss += loss_res[key][0]
+                    else:
+                        loss += loss_res[key] 
             print("Epoch: ", epoch, "Iter: ", i, "Loss: ", loss.item())
-
 
             loss.backward()
 
@@ -238,6 +250,11 @@ def main():
                 print(f"   Loss {key}: {loss_single.item()}")   
             if grad_clip_cfg is not None:
                 clip_grads(model.parameters(), grad_clip_cfg)
+
+            # if i > 10 :
+            #     # DEBUG
+            #     break
+
             optimizer.step()
             lr_scheduler.step()
             optimizer.zero_grad()
@@ -254,7 +271,13 @@ def main():
                     data['img_metas'][0]['test'] = 1
                 
                     loss_res = model(**data)
-                    loss = sum([loss_res[key][0] if isinstance(loss_res[key], list) else loss_res[key] for key in loss_res])
+                    loss= 0
+                    for key in loss_res:
+                        if "loss" in key:
+                            if isinstance(loss_res[key], list):
+                                loss += loss_res[key][0]
+                            else:
+                                loss += loss_res[key] 
 
                     val_loss.append(loss.item())
                     # record loss
@@ -272,11 +295,11 @@ def main():
 
                     if cfg["save_backbone"]:
                         torch.save(model.backbone.state_dict(), f"{save_path}/best_backbone.pth")
-                        print(f"Save backbone at epoch {epoch}")
+                        print(f"Save best backbone at epoch {epoch}")
                           
                 if (epoch + 1) % 10 == 0:
                     torch.save(model.state_dict(), f"{save_path}/epoch_{epoch}.pth")
-                    print(f"Save best model at epoch {epoch} in {save_path}")
+                    print(f"Save model at epoch {epoch} in {save_path}")
 
                     if cfg["save_backbone"]:
                         torch.save(model.backbone.state_dict(), f"{save_path}/epoch_{epoch}_backbone.pth")
@@ -296,7 +319,8 @@ def main():
                         # save bbox_res
                         for idx, (bbox, img_meta) in enumerate(zip(bbox_res, data['img_metas'])):
                             # extract bbox from bbox_res
-                            img_meta = img_meta['img_info']
+                            dataset_type = img_meta['dataset_type']
+
                             if 'img_bbox' in bbox:
                                 bbox = bbox['img_bbox']['boxes_3d'].tensor.cpu().numpy()[:, :7]
                             else:
@@ -310,12 +334,19 @@ def main():
                             elif cfg['bbox_coordination'] == "Lidar":
                                 vis_imgs = []
                                 for filename, direction in zip(img_meta['img_filename'], img_meta['direction']):
-                                    cam_model = cam_models[direction]
-                                    img = detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_train_res_path, bboxes_coor = "Lidar")
+                                    if dataset_type in ['Hycan', 'Rock']:
+                                        img = detection_visualization(bbox, gt_bbox, filename, cam_models[dataset_type][direction], bbox_train_res_path, bboxes_coor = "Lidar")
+                                    else:
+                                        instrinsic = np.array(img_meta['intrinsic'][direction])
+                                        extrinsic = np.array(img_meta['extrinsic'][direction])
+                                        img = detection_visualization_pinhole(filename, instrinsic, extrinsic, None, gt_bbox)
                                     vis_imgs.append(img)
                                 vis_imgs = np.concatenate(vis_imgs, axis=1)
-                                cv2.imwrite(os.path.join(bbox_train_res_path, f"{filename.split('/')[-1].split('.jpg')[0]}.jpg"), vis_imgs)
-
+                                if not os.path.exists(os.path.join(bbox_train_res_path, dataset_type)):
+                                    os.makedirs(os.path.join(bbox_train_res_path, dataset_type))
+                                cv2.imwrite(os.path.join(bbox_train_res_path, dataset_type, f"{img_meta['timestamp']}.jpg"), vis_imgs)
+                        if i >= 20:
+                            break
                 with torch.no_grad():
                     val_epoch = epoch // eval_interval
                     for i, data in tqdm(enumerate(val_loader)):
@@ -325,7 +356,7 @@ def main():
                         # save bbox_res
                         for idx ,(bbox, img_meta) in enumerate(zip(bbox_res, data['img_metas'])):
                             # extract bbox from bbox_res
-                            img_meta = img_meta['img_info']
+                            dataset_type = img_meta['dataset_type']
                             if 'img_bbox' in bbox:
                                 bbox = bbox['img_bbox']['boxes_3d'].tensor.cpu().numpy()[:, :7]
                             else:
@@ -338,11 +369,13 @@ def main():
                             elif cfg['bbox_coordination'] == "Lidar":
                                 vis_imgs = []
                                 for filename, direction in zip(img_meta['img_filename'], img_meta['direction']):
-                                    cam_model = cam_models[direction]
+                                    cam_model = cam_models[dataset_type][direction]
                                     img = detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_path, bboxes_coor = "Lidar")
                                     vis_imgs.append(img)
                                 vis_imgs = np.concatenate(vis_imgs, axis=1)
                                 cv2.imwrite(os.path.join(bbox_res_path, f"{filename.split('/')[-1].split('.jpg')[0]}.jpg"), vis_imgs)
+                        if i >= 20:
+                            break
             model.train()
     print("Training finished.")
     writer.close()

@@ -232,10 +232,23 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
         # classification loss
         if num_total_samples is None:
             num_total_samples = int(cls_score.shape[0])
+
+        import numpy as np
+        import cv2
+
+        pred_heatmap_np = cls_score[0, 0].cpu().detach().numpy()
+        # sigmoid
+        pred_heatmap_np = 1 / (1 + np.exp(-pred_heatmap_np))
+
+        gt_heatmap_np = labels[0].cpu().detach().numpy().reshape(80, 80, -1)[...,0]
+        heatmap_np = (np.concatenate([pred_heatmap_np, gt_heatmap_np], axis = 1) * 255).astype(np.uint8) 
+        cv2.imwrite('pred_heatmap.png',heatmap_np)
+
         labels = labels.reshape(-1)
         label_weights = label_weights.reshape(-1)
         cls_score = cls_score.permute(0, 2, 3, 1).reshape(-1, self.num_classes)
         assert labels.max().item() <= self.num_classes
+        import pdb; pdb.set_trace()
         loss_cls = self.loss_cls(
             cls_score, labels, label_weights, avg_factor=num_total_samples)
 
@@ -254,8 +267,6 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
         pos_bbox_pred = bbox_pred[pos_inds]
         pos_bbox_targets = bbox_targets[pos_inds]
         pos_bbox_weights = bbox_weights[pos_inds]
-
-        # import pdb; pdb.set_trace()
 
         # dir loss
         if self.use_direction_classifier:
@@ -376,6 +387,7 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
             num_total_pos + num_total_neg if self.sampling else num_total_pos)
 
         # num_total_samples = None
+
         losses_cls, losses_bbox, losses_dir = multi_apply(
             self.loss_single,
             cls_scores,
@@ -871,6 +883,7 @@ class GaussianAnchor3DHead(BaseModule, AnchorTrainMixin):
         label_weights = label_weights.reshape(-1)
         cls_score = cls_score.permute(0, 2, 3, 1).reshape(-1, self.num_classes)
         assert labels.max().item() <= self.num_classes
+        
         loss_cls = self.loss_cls(
             cls_score, labels, label_weights, avg_factor=num_total_samples)
 

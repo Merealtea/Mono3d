@@ -21,8 +21,8 @@ from utilities import init_random_seed, detection_visualization,\
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a detector')
     parser.add_argument('--last_ckpt', help='train config file path')
-    parser.add_argument('--val_data_path', help='val data path')
-    parser.add_argument('--vehicle', help='vehicle type', default=None)
+    parser.add_argument('--epoch', help='val data path')
+    # parser.add_argument('--vehicle', help='vehicle type', default=None)
     args = parser.parse_args()
     return args
 
@@ -38,10 +38,14 @@ def main():
 
     ckpt_path = args.last_ckpt
     cfg = yaml.safe_load(open(os.path.join(ckpt_path, 'config', 'train_config.yaml')))
-    vehicle = cfg["vehicle"] if args.vehicle is None else args.vehicle
+    # vehicle = cfg["vehicle"] if args.vehicle is None else args.vehicle
     # set random seeds
     seed = init_random_seed(cfg['seed'])
-    cam_models = dict(zip(["left", "right", "front", "back"], [CamModel(direction, vehicle) for direction in ["left", "right", "front", "back"]]))
+    cam_models = {
+        "Rock" : dict(zip(["left", "right", "front", "back"], [CamModel(direction, "Rock") for direction in ["left", "right", "front", "back"]])),
+        "Hycan" : dict(zip(["left", "right", "front", "back"], [CamModel(direction, "Hycan") for direction in ["left", "right", "front", "back"]])), 
+    }
+    
     # load dataset
     with open(os.path.join(ckpt_path, 'config', 'dataset_config.yaml')) as f:
         dataset_cfg = yaml.safe_load(f)
@@ -62,23 +66,21 @@ def main():
                 ckpt_file = os.path.join(ckpt_path, file)
 
     # Create save folder to save the ckpt
-    data_datetime = args.val_data_path.split('/')[-1]
-    save_path = os.path.join(cfg['save_path'], 'val_{}'.format(data_datetime))
+
+    save_path = os.path.join(cfg['save_path'], 'val')
     create_folder(save_path)
 
     # load val dataset
-    dataset_cfg["data_root"] = args.val_data_path
     dataset_cfg["ann_prefix"] = cfg["annotation_prefix"]
     dataset_cfg["img_prefix"] = cfg["image_prefix"]   
     dataset_cfg['test_mode'] = True
-    dataset_cfg["vehicle"] = cfg["vehicle"]
+
     val_dataset = build_dataset(dataset_cfg)
 
     # set_device
     device = torch.device(f"cuda:0") if torch.cuda.is_available() else torch.device('cpu')
     
     # load model
-    model_cfg["vehicle"] = cfg["vehicle"]
     model = build_detector(model_cfg)
     model.load_state_dict(torch.load(ckpt_file, map_location=device))
     model.to_device(device)
@@ -128,8 +130,9 @@ def main():
                     detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_dir_path, bboxes_coor = "CAM")
                 elif cfg['bbox_coordination'] == "Lidar":
                     vis_imgs = []
+                    dataset_type = img_meta['dataset_type']
                     for filename, direction in zip(img_meta['img_filename'], img_meta['direction']):
-                        cam_model = cam_models[direction]
+                        cam_model = cam_models[dataset_type][direction]
                         bbox_res_dir_path = os.path.join(bbox_res_path, direction)
                         img = detection_visualization(bbox, gt_bbox, filename, cam_model, bbox_res_dir_path, bboxes_coor = "Lidar")
                         vis_imgs.append(img)
