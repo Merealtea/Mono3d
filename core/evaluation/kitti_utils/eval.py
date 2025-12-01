@@ -117,8 +117,8 @@ def image_box_overlap(boxes, query_boxes, criterion=-1):
 
 
 def bev_box_overlap(boxes, qboxes, criterion=-1):
-    from .rotate_iou import rotate_iou_gpu_eval
-    riou = rotate_iou_gpu_eval(boxes, qboxes, criterion)
+    from .rotate_iou import rotate_iou_cpu_eval
+    riou = rotate_iou_cpu_eval(boxes, qboxes, criterion)
     return riou
 
 
@@ -155,8 +155,8 @@ def d3_box_overlap_kernel(boxes, qboxes, rinc, criterion=-1):
 
 
 def d3_box_overlap(boxes, qboxes, criterion=-1):
-    from .rotate_iou import rotate_iou_gpu_eval
-    rinc = rotate_iou_gpu_eval(boxes[:, [0, 1, 3, 4, 6]],
+    from .rotate_iou import rotate_iou_cpu_eval
+    rinc = rotate_iou_cpu_eval(boxes[:, [0, 1, 3, 4, 6]],
                                qboxes[:, [0, 1, 3, 4, 6]])
     d3_box_overlap_kernel(boxes, qboxes, rinc, criterion)
     return rinc
@@ -547,6 +547,7 @@ def eval_class(gt_annos,
                         thresholds=thresholds,
                         compute_aos=compute_aos)
                     idx += num_part
+   
                 for i in range(len(thresholds)):
                     recall[m, idx_l, k, i] = pr[i, 0] / (pr[i, 0] + pr[i, 2])
                     precision[m, idx_l, k, i] = pr[i, 0] / (
@@ -561,6 +562,7 @@ def eval_class(gt_annos,
                     if compute_aos:
                         aos[m, idx_l, k, i] = np.max(
                             aos[m, idx_l, k, i:], axis=-1)
+
     ret_dict = {
         'recall': recall,
         'precision': precision,

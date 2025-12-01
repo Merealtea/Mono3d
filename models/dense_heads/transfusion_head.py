@@ -888,29 +888,30 @@ class TransFusionHead(BaseModule, AnchorTrainMixin):
 
         # For Focal Loss
 
-        # pred_heatmap = preds_dict['dense_heatmap'].float().reshape(-1, 1)
-        # heatmap = torch.where(heatmap.eq(1), 0, 1).long().reshape(-1)
+        pred_heatmap = preds_dict['dense_heatmap'].float().reshape(-1, 1)
+        heatmap = torch.where(heatmap.eq(1), 0, 1).long().reshape(-1)
 
-        # loss_heatmap = self.loss_heatmap(
-        #     pred_heatmap,
-        #     heatmap,
-        #     avg_factor=max(heatmap.eq(0).float().sum().item(), 1),
-        # )
-        
-        # compute heatmap loss
-        pred_heatmap = clip_sigmoid(preds_dict['dense_heatmap']).float()
-        heatmap = torch.where(heatmap.eq(1), 1, 0).long()
         loss_heatmap = self.loss_heatmap(
             pred_heatmap,
-            heatmap.float(),
-            avg_factor=max(heatmap.eq(1).float().sum().item(), 1),
+            heatmap,
+            avg_factor=max(heatmap.eq(0).float().sum().item(), 1),
         )
+        
+        # compute heatmap loss
+        # pred_heatmap = clip_sigmoid(preds_dict['dense_heatmap']).float()
+        # heatmap = torch.where(heatmap.eq(1), 1, 0).long()
+        # loss_heatmap = self.loss_heatmap(
+        #     pred_heatmap,
+        #     heatmap.float(),
+        #     avg_factor=max(heatmap.eq(1).float().sum().item(), 1),
+        # )
 
         import numpy as np
         import cv2
+        # import pdb; pdb.set_trace()
         
-        pred_heatmap_np = np.concatenate([prob for prob in pred_heatmap[0].cpu().detach().numpy()])
-        gt_heatmap_np = np.concatenate([prob for prob in heatmap[0].cpu().detach().numpy()])
+        pred_heatmap_np = np.concatenate([prob for prob in clip_sigmoid(pred_heatmap.reshape(-1, 1, 80, 80)[0].cpu().detach()).numpy()])
+        gt_heatmap_np = np.concatenate([prob for prob in heatmap.reshape(-1, 1, 80, 80)[0].cpu().detach().numpy()])
         heatmap_np = (np.concatenate([pred_heatmap_np, gt_heatmap_np], axis = 1) * 255).astype(np.uint8) 
         cv2.imwrite('pred_heatmap.png', heatmap_np)
         loss_dict['loss_heatmap'] = loss_heatmap

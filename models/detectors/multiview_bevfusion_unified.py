@@ -292,7 +292,7 @@ class MultiViewBEVFusionUnified(nn.Module):
             if img_meta['dataset_type'] == "Rock":
                 frame_volume = torch.flip(frame_volume.transpose(-3, -2), dims=[-3])
             volumes.append(frame_volume)
-        
+
         volume_feat = torch.stack(volumes)  # (B, C, N_x, N_y, N_z)
         volume_feat = self.neck_3d(volume_feat)[0]
 
@@ -332,11 +332,12 @@ class MultiViewBEVFusionUnified(nn.Module):
         gt_labels_3d=None,
         **kwargs,
     ):
-    
+
         bev_feat = self.extract_feat(
             img,
             img_metas,
         )
+
         # depth = depth_img[0][0].cpu().detach().numpy()
         # depth = (depth / np.max(depth) * 255).astype(np.int8)
         # cv2.imwrite("Depth.jpg", depth)

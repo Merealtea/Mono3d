@@ -152,6 +152,7 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
         """
         cls_score = self.conv_cls(x)
         bbox_pred = self.conv_reg(x)
+
         dir_cls_preds = None
         if self.use_direction_classifier:
             dir_cls_preds = self.conv_dir_cls(x)
@@ -240,7 +241,7 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
         # sigmoid
         pred_heatmap_np = 1 / (1 + np.exp(-pred_heatmap_np))
 
-        gt_heatmap_np = labels[0].cpu().detach().numpy().reshape(80, 80, -1)[...,0]
+        gt_heatmap_np = labels[0].cpu().detach().numpy().reshape(pred_heatmap_np.shape[0], pred_heatmap_np.shape[1], -1)[...,0]
         heatmap_np = (np.concatenate([pred_heatmap_np, gt_heatmap_np], axis = 1) * 255).astype(np.uint8) 
         cv2.imwrite('pred_heatmap.png',heatmap_np)
 
@@ -248,7 +249,7 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
         label_weights = label_weights.reshape(-1)
         cls_score = cls_score.permute(0, 2, 3, 1).reshape(-1, self.num_classes)
         assert labels.max().item() <= self.num_classes
-        import pdb; pdb.set_trace()
+
         loss_cls = self.loss_cls(
             cls_score, labels, label_weights, avg_factor=num_total_samples)
 
@@ -363,6 +364,7 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
                     losses.
         """
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
+
         assert len(featmap_sizes) == self.anchor_generator.num_levels
         device = cls_scores[0].device
         anchor_list = self.get_anchors(

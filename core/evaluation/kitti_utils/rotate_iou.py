@@ -9,6 +9,7 @@ import math
 import numba
 import numpy as np
 from numba import cuda
+from numba import njit, prange
 
 
 @numba.jit(nopython=True)
@@ -376,3 +377,148 @@ def rotate_iou_gpu_eval(boxes, query_boxes, criterion=-1, device_id=0):
                                        iou_dev, criterion)
         iou_dev.copy_to_host(iou.reshape([-1]), stream=stream)
     return iou.astype(boxes.dtype)
+
+
+def _rotated_box_to_vertices_cpu(cx, cy, l, w, angle):
+    """
+    Convert rotated box to 4 corners (clockwise, starting from front-right).
+    angle is in radians, clockwise positive (so we use -angle for standard trig).
+    """
+    cos_a = math.cos(-angle)
+    sin_a = math.sin(-angle)
+    l_half = l / 2.0
+    w_half = w / 2.0
+
+    dx1 = l_half * cos_a
+    dy1 = l_half * sin_a
+    dx2 = -w_half * sin_a
+    dy2 = w_half * cos_a
+
+    x0 = cx + dx1 + dx2
+    y0 = cy + dy1 + dy2
+
+    x1 = cx - dx1 + dx2
+    y1 = cy - dy1 + dy2
+
+    x2 = cx - dx1 - dx2
+    y2 = cy - dy1 - dy2
+
+    x3 = cx + dx1 - dx2
+    y3 = cy + dy1 - dy2
+
+    return [(x0, y0), (x1, y1), (x2, y2), (x3, y3)]
+
+def _polygon_area_cpu(vertices):
+    """Calculate area using shoelace formula."""
+    if len(vertices) < 3:
+        return 0.0
+    area = 0.0
+    n = len(vertices)
+    for i in range(n):
+        j = (i + 1) % n
+        area += vertices[i][0] * vertices[j][1]
+        area -= vertices[j][0] * vertices[i][1]
+    return abs(area) / 2.0
+
+def _inside(p, a, b):
+    """Check if point p is on the left side of edge a->b (for clipping)."""
+    return (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) >= 0
+
+def _compute_intersection(cp1, cp2, s, e):
+    """Compute intersection point of two line segments."""
+    dc = [cp1[0] - cp2[0], cp1[1] - cp2[1]]
+    dp = [s[0] - e[0], s[1] - e[1]]
+    n1 = cp1[0] * cp2[1] - cp1[1] * cp2[0]
+    n2 = s[0] * e[1] - s[1] * e[0]
+    denom = dc[0] * dp[1] - dc[1] * dp[0]
+    if abs(denom) < 1e-10:
+        return s  # fallback
+    n3 = 1.0 / denom
+    return [(n1 * dp[0] - n2 * dc[0]) * n3, (n1 * dp[1] - n2 * dc[1]) * n3]
+
+def _clip_polygon(subject, clip):
+    """Sutherland-Hodgman polygon clipping: clip `subject` polygon by `clip` convex polygon."""
+    if not subject or not clip:
+        return []
+    output_list = subject[:]
+    cp1 = clip[-1]
+    for cp2 in clip:
+        if not output_list:
+            break
+        input_list = output_list
+        output_list = []
+        s = input_list[-1]
+        for e in input_list:
+            if _inside(e, cp1, cp2):
+                if not _inside(s, cp1, cp2):
+                    try:
+                        inter_pt = _compute_intersection(cp1, cp2, s, e)
+                        output_list.append(inter_pt)
+                    except:
+                        pass
+                output_list.append(e)
+            elif _inside(s, cp1, cp2):
+                try:
+                    inter_pt = _compute_intersection(cp1, cp2, s, e)
+                    output_list.append(inter_pt)
+                except:
+                    pass
+            s = e
+        cp1 = cp2
+    return output_list
+
+def _compute_inter_area_cpu(box1, box2):
+    """Compute intersection area of two rotated boxes."""
+    verts1 = _rotated_box_to_vertices_cpu(box1[0], box1[1], box1[2], box1[3], box1[4])
+    verts2 = _rotated_box_to_vertices_cpu(box2[0], box2[1], box2[2], box2[3], box2[4])
+    
+    # Clip box1 by box2
+    clipped = _clip_polygon(verts1, verts2)
+    if len(clipped) < 3:
+        return 0.0
+    return _polygon_area_cpu(clipped)
+
+def rotate_iou_cpu_eval(boxes, query_boxes, criterion=-1):
+    """
+    Compute rotated IoU on CPU (no Numba, no GPU).
+    
+    Args:
+        boxes (np.ndarray): Shape [N, 5], each row: [cx, cy, l, w, angle]
+        query_boxes (np.ndarray): Shape [K, 5]
+        criterion (int): 
+            -1 -> IoU = inter / (area1 + area2 - inter)
+             0 -> IoU = inter / area1
+             1 -> IoU = inter / area2
+
+    Returns:
+        np.ndarray: Shape [N, K], IoU values
+    """
+    boxes = np.asarray(boxes, dtype=np.float64)
+    query_boxes = np.asarray(query_boxes, dtype=np.float64)
+    N = boxes.shape[0]
+    K = query_boxes.shape[0]
+    
+    if N == 0 or K == 0:
+        return np.zeros((N, K), dtype=np.float64)
+    
+    iou_matrix = np.zeros((N, K), dtype=np.float64)
+    
+    for i in range(N):
+        box = boxes[i]
+        area1 = box[2] * box[3]
+        for j in range(K):
+            qbox = query_boxes[j]
+            area2 = qbox[2] * qbox[3]
+            inter_area = _compute_inter_area_cpu(box, qbox)
+            
+            if criterion == 0:
+                iou = inter_area / area1 if area1 > 1e-8 else 0.0
+            elif criterion == 1:
+                iou = inter_area / area2 if area2 > 1e-8 else 0.0
+            else:  # criterion == -1
+                union = area1 + area2 - inter_area
+                iou = inter_area / union if union > 1e-8 else 0.0
+            
+            iou_matrix[i, j] = iou
+
+    return iou_matrix.astype(boxes.dtype)

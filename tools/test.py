@@ -115,6 +115,7 @@ def main():
             del data['img'] 
             ground_truth.append(data)
 
+
             # save bbox_res
             for idx ,(bbox, img_meta) in enumerate(zip(bbox_res, data['img_metas'])):
                 # extract bbox from bbox_res

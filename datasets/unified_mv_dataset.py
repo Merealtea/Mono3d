@@ -58,8 +58,7 @@ class UnifiedMV3DDataset(BaseDataset):
             on perspective views. Defaults to 'lidar_frame'.
     """
 
-    CLASSES = ('Pedestrian')
-    # CLASSES = ('car')
+    CLASSES = ('Pedestrian', )
 
     def __init__(self,
                  data_info_pickles,
@@ -492,7 +491,6 @@ class UnifiedMV3DDataset(BaseDataset):
                 data_format='kitti')
 
             from core.evaluation import kitti_eval
-
             # Note: Here we use raw_data_infos for evaluation
             gt_annos = ground_truth 
             # [info['annos'] for info in self.raw_data_infos]
